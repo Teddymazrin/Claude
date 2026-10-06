@@ -1,0 +1,19 @@
+{
+  "name": "teddymazrin-mods",
+  "description": "Claude Code mods by Teddymazrin",
+  "owner": {
+    "name": "Teddymazrin"
+  },
+  "plugins": [
+    {
+      "name": "bare-view",
+      "source": "./claude-code-mods/bare-view",
+      "description": "Live task checklist above the prompt; hides tool-call noise"
+    },
+    {
+      "name": "control-panel",
+      "source": "./claude-code-mods/claude-tools",
+      "description": "Status row, model and effort picker, mod switches"
+    }
+  ]
+}

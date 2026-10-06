@@ -1,0 +1,11 @@
+{
+  "name": "bare-view",
+  "version": "1.0.0",
+  "description": "Live task checklist. Shows a live checklist above the prompt (working on, progress, what's left) and hides the tool-call noise in the transcript",
+  "author": {
+    "name": "Teddymazrin"
+  },
+  "homepage": "https://github.com/Teddymazrin/Claude/tree/main/claude-code-mods",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
