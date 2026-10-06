@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderChildren, SessionRateLimit } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer, TimerCall } from 'claude-code'
 
 import type { Choice, Effort, Meter, Mod, Plan, Seen } from '../types'
 
@@ -8,6 +8,8 @@ const PANE = 'control-panel'
 const TITLE = 'Control Panel'
 const COMMAND = 'control-panel'
 const RELOAD = 'reload-plugins'
+// Quiet time after the last switch before the one reload runs.
+export const RELOAD_DELAY_MS = 1500
 
 // Palette: warm gold frame, orange for the model, mauve for effort, green for on.
 const GOLD = '#d9a441'
@@ -272,7 +274,32 @@ async function rescan($: EngineInterface) {
   await update($, mods, () => found)
 }
 
-async function toggle($: EngineInterface, mod: Mod) {
+/**
+ * Runs the latest `fire` once, `ms` after the last call: each call cancels the one pending.
+ * Rapid switches then end in a single reload that sees the final state.
+ */
+export const debouncer = (ms: number) => {
+  let pending: Timer | undefined
+  return (after: TimerCall, fire: () => void) => {
+    pending?.cancel()
+    pending = after(ms, () => {
+      pending = undefined
+      fire()
+    })
+  }
+}
+
+const scheduleReload = debouncer(RELOAD_DELAY_MS)
+
+// One switch at a time, so quick presses read and write the list and settings.json in order.
+let switching: Promise<void> = Promise.resolve()
+
+function toggle($: EngineInterface, mod: Mod) {
+  switching = switching.then(() => switchMod($, mod)).catch(() => {})
+  return switching
+}
+
+async function switchMod($: EngineInterface, mod: Mod) {
   const next = toggled(await storedDisabled($), mod.name)
   await $.store.set('disabled', next)
   await update($, disabled, () => next)
@@ -284,10 +311,12 @@ async function toggle($: EngineInterface, mod: Mod) {
       $.ui.toast(`${titled(mod.name)} ${word} here, but settings.json was not updated · use /plugin to ${isOn ? 'enable' : 'disable'} it`)
       return
     }
-    $.ui.toast(`${titled(mod.name)} ${word}`)
-    // Last: the reload runs once the session is idle and reloads this mod too.
+    $.ui.toast(`${titled(mod.name)} ${word} · reloading shortly`)
+    // Last: one reload once the switching stops, run when the session is idle; it reloads this mod too.
     // Not awaited, since this environment may be gone by the time it settles.
-    $.command.run({ command: RELOAD }).catch(() => $.ui.toast(`${titled(mod.name)} ${word} · run /${RELOAD} to apply`))
+    scheduleReload((ms, fn) => $.clock.after(ms, fn), () => {
+      $.command.run({ command: RELOAD }).catch(() => $.ui.toast(`Run /${RELOAD} to apply the switch`))
+    })
     return
   }
   await poke($, mod).catch(() => {})

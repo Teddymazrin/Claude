@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EFFORTS, MODELS, applyChoice, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { EFFORTS, MODELS, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -98,4 +98,22 @@ test('switches a plugin in enabledPlugins and keeps the rest of settings', () =>
   expect(JSON.parse(withPluginEnabled('{}', 'a@m', true)!)).toEqual({ enabledPlugins: { 'a@m': true } })
   expect(withPluginEnabled('not json', 'a@m', false)).toBeUndefined()
   expect(withPluginEnabled('[]', 'a@m', false)).toBeUndefined()
+})
+
+test('runs one reload after a burst of switches, with the last one', () => {
+  const timers: Array<{ fn: () => void; isCancelled: boolean }> = []
+  const after = (_ms: number, fn: () => void) => {
+    const timer = { fn, isCancelled: false }
+    timers.push(timer)
+    return { cancel: () => { timer.isCancelled = true } }
+  }
+  const fired: string[] = []
+  const schedule = debouncer(1500)
+  schedule(after, () => fired.push('off'))
+  schedule(after, () => fired.push('on'))
+  for (const timer of timers) if (!timer.isCancelled) timer.fn()
+  expect(fired).toEqual(['on'])
+  schedule(after, () => fired.push('again'))
+  timers[timers.length - 1].fn()
+  expect(fired).toEqual(['on', 'again'])
 })
