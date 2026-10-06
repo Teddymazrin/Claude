@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EFFORTS, MODELS, applyChoice, installedRoots, isInstalled, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { EFFORTS, MODELS, applyChoice, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -82,4 +82,20 @@ test('reads installed plugin folders and tells them from dev folders', () => {
   expect(installedRoots('not json')).toEqual([])
   expect(isInstalled('C:\\Users\\me\\.claude\\plugins\\cache\\m\\a\\1.0.0')).toBe(true)
   expect(isInstalled('/home/me/.claude/dev-mods/abc/a')).toBe(false)
+})
+
+test('finds the key an installed plugin is enabled under', () => {
+  const json = JSON.stringify({ plugins: { 'bare-view@mods': [{}], 'bare@other': [{}] } })
+  expect(installedKey(json, 'bare-view')).toBe('bare-view@mods')
+  expect(installedKey(json, 'bare')).toBe('bare@other')
+  expect(installedKey(json, 'missing')).toBeUndefined()
+  expect(installedKey('not json', 'bare-view')).toBeUndefined()
+})
+
+test('switches a plugin in enabledPlugins and keeps the rest of settings', () => {
+  const settings = JSON.stringify({ model: 'x', enabledPlugins: { 'a@m': true, 'b@m': true } })
+  expect(JSON.parse(withPluginEnabled(settings, 'a@m', false)!)).toEqual({ model: 'x', enabledPlugins: { 'a@m': false, 'b@m': true } })
+  expect(JSON.parse(withPluginEnabled('{}', 'a@m', true)!)).toEqual({ enabledPlugins: { 'a@m': true } })
+  expect(withPluginEnabled('not json', 'a@m', false)).toBeUndefined()
+  expect(withPluginEnabled('[]', 'a@m', false)).toBeUndefined()
 })

@@ -185,6 +185,49 @@ export const installedRoots = (text: string): string[] => {
 /** Installed copies live under ~/.claude/plugins/cache, which no watcher reloads. */
 export const isInstalled = (root: string) => /[\\/]plugins[\\/]cache[\\/]/.test(root)
 
+/** The `<name>@<marketplace>` key an installed plugin is enabled under, from installed_plugins.json. */
+export const installedKey = (text: string, name: string): string | undefined => {
+  try {
+    const data = JSON.parse(text) as { plugins?: Record<string, unknown> }
+    return Object.keys(data.plugins ?? {}).find(key => key.slice(0, key.lastIndexOf('@')) === name)
+  } catch {
+    return undefined
+  }
+}
+
+/** settings.json with `enabledPlugins[key]` set; undefined when the text is not a JSON object. */
+export const withPluginEnabled = (text: string, key: string, isOn: boolean): string | undefined => {
+  try {
+    const data = JSON.parse(text || '{}') as Record<string, unknown>
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined
+    const enabled = data.enabledPlugins && typeof data.enabledPlugins === 'object' ? data.enabledPlugins : {}
+    return JSON.stringify({ ...data, enabledPlugins: { ...enabled, [key]: isOn } }, null, 2) + '\n'
+  } catch {
+    return undefined
+  }
+}
+
+const claudeDir = async ($: EngineInterface) => {
+  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+  return home ? `${home}/.claude` : ''
+}
+
+// A switched-off mod's plugin.register refusal only reaches mods that load after
+// this one, so an installed mod is switched in the engine's own enabledPlugins:
+// /reload-plugins then leaves it out whatever the load order.
+async function setInstalledEnabled($: EngineInterface, mod: Mod, isOn: boolean) {
+  const claude = await claudeDir($)
+  if (!claude) return false
+  const key = installedKey(await $.fs.read(`${claude}/plugins/installed_plugins.json`).catch(() => ''), mod.name)
+  if (!key) return false
+  const path = `${claude}/settings.json`
+  // No fallback on a failed read: writing then would replace the person's settings.
+  const next = withPluginEnabled(await $.fs.read(path), key, isOn)
+  if (!next) return false
+  await $.fs.write(path, next)
+  return true
+}
+
 const subfolders = async ($: EngineInterface, folder: string) =>
   (await $.fs.list(folder).catch(() => [])).filter(entry => entry.kind === 'dir').map(entry => `${folder}/${entry.name}`)
 
@@ -204,10 +247,9 @@ async function readMod($: EngineInterface, root: string): Promise<Mod | undefine
 // plugin, every mods folder under ~/.claude/dev-mods, and this one's siblings.
 // One row per name; a folder that is gone drops out.
 async function scan($: EngineInterface): Promise<Mod[]> {
-  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  const claude = `${home}/.claude`
-  const installed = home ? installedRoots(await $.fs.read(`${claude}/plugins/installed_plugins.json`).catch(() => '')) : []
-  const dev = home ? (await Promise.all((await subfolders($, `${claude}/dev-mods`)).map(f => subfolders($, f)))).flat() : []
+  const claude = await claudeDir($)
+  const installed = claude ? installedRoots(await $.fs.read(`${claude}/plugins/installed_plugins.json`).catch(() => '')) : []
+  const dev = claude ? (await Promise.all((await subfolders($, `${claude}/dev-mods`)).map(f => subfolders($, f)))).flat() : []
   const siblings = await subfolders($, parentOf($.plugin.root))
   const found = new Map<string, Mod>()
   for (const root of [...(await storedRoots($)), ...installed, ...siblings, ...dev]) {
@@ -233,9 +275,15 @@ async function toggle($: EngineInterface, mod: Mod) {
   const next = toggled(await storedDisabled($), mod.name)
   await $.store.set('disabled', next)
   await update($, disabled, () => next)
-  const word = next.includes(mod.name) ? 'off' : 'on'
+  const isOn = !next.includes(mod.name)
+  const word = isOn ? 'on' : 'off'
   if (isInstalled(mod.root)) {
-    $.ui.toast(`${titled(mod.name)} ${word} · run /reload-plugins to apply`)
+    const isSet = await setInstalledEnabled($, mod, isOn).catch(() => false)
+    $.ui.toast(
+      isSet
+        ? `${titled(mod.name)} ${word} · run /reload-plugins to apply`
+        : `${titled(mod.name)} ${word} here, but settings.json was not updated · use /plugin to ${isOn ? 'enable' : 'disable'} it`,
+    )
     return
   }
   await poke($, mod).catch(() => {})
