@@ -4,7 +4,7 @@ Three mods for the Claude Code terminal. Install with one line at the Claude Cod
 
 ## Bare View
 
-A live task checklist above the prompt: the goal, a progress bar, each step and a timer. Tool calls and in-progress text are hidden so only the checklist and the final answer show. `/checklist` toggles the full view back on. A tally line counts the tool calls behind each prompt, built-in vs MCP by server: `⚙ 3 tool calls · 2 built-in · 1 MCP (microsoft-learn 1)`.
+A live task checklist above the prompt: the goal, a progress bar, each step and a timer. Tool calls and in-progress text are hidden so only the checklist and the final answer show. `/checklist` toggles the full view back on. A tally line counts the tool calls behind each prompt, naming each built-in tool and each MCP server, with the tool running right now on the right: `⚙ 4 tool calls · Built-in 3: Bash 2, Read 1 · MCP 1: microsoft-learn 1   ▶ Bash`.
 
 ```
 /plugin install bare-view --marketplace Teddymazrin/Claude

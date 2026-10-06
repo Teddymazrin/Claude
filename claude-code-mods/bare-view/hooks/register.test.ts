@@ -1,20 +1,28 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bar, countCall, elapsed, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyLine } from './register'
+import { bar, countCall, elapsed, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyLine, toolLabel } from './register'
 
-test('tallies tool calls and groups MCP ones by server', () => {
+test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
   expect(mcpServer('mcp__claude_ai_Gmail__search')).toBe('Gmail')
   expect(mcpServer('mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search')).toBe('microsoft-learn')
+  expect(toolLabel('Bash')).toBe('Bash')
+  expect(toolLabel('mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search')).toBe('microsoft-learn › microsoft_docs_search')
   let t = countCall(undefined, 'Bash')
+  t = countCall(t, 'Read')
+  t = countCall(t, 'Bash')
   t = countCall(t, 'mcp__claude_ai_Gmail__search')
   t = countCall(t, 'mcp__claude_ai_Gmail__read')
   t = countCall(t, 'mcp__ide__getDiagnostics')
-  expect(t).toEqual({ total: 4, mcp: { Gmail: 2, ide: 1 } })
-  expect(tallyLine(t)).toBe('4 tool calls · 1 built-in · 3 MCP (Gmail 2, ide 1)')
-  expect(tallyLine({ total: 3, mcp: { 'microsoft-learn': 1 } })).toBe('3 tool calls · 2 built-in · 1 MCP (microsoft-learn 1)')
-  expect(tallyLine({ total: 2, mcp: { Gmail: 2 } })).toBe('2 tool calls · 2 MCP (Gmail 2)')
-  expect(tallyLine({ total: 1, mcp: {} })).toBe('1 tool call')
+  expect(t).toEqual({ total: 6, mcp: { Gmail: 2, ide: 1 }, builtIn: { Bash: 2, Read: 1 }, running: 'ide › getDiagnostics' })
+  expect(tallyLine(t)).toBe('6 tool calls · Built-in 3: Bash 2, Read 1 · MCP 3: Gmail 2, ide 1')
+  // The running tool clears when it finishes, but not when an earlier call finishes after a newer one started.
+  expect(finishCall(t, 'Bash')?.running).toBe('ide › getDiagnostics')
+  expect(finishCall(t, 'mcp__ide__getDiagnostics')?.running).toBeUndefined()
+  expect(tallyLine({ total: 2, mcp: {}, builtIn: { ToolSearch: 1, Bash: 1 } })).toBe('2 tool calls · Built-in 2: Bash 1, ToolSearch 1')
+  expect(tallyLine({ total: 2, mcp: { Gmail: 2 } })).toBe('2 tool calls · MCP 2: Gmail 2')
+  // A tally saved before tools were named still reads.
+  expect(tallyLine({ total: 3, mcp: { 'microsoft-learn': 1 } })).toBe('3 tool calls · 2 built-in · MCP 1: microsoft-learn 1')
 })
 
 test('parses and scores a checklist', () => {

@@ -69,23 +69,45 @@ export const mcpServer = (tool: string) => {
   return server.replace(/_/g, ' ')
 }
 
+/** What the tally calls a tool: its own name, or "server › tool" for an MCP one. */
+export const toolLabel = (tool: string) => {
+  const server = mcpServer(tool)
+  return server === undefined ? tool : `${server} › ${tool.replace(/^mcp__.+?__/, '')}`
+}
+
 export const countCall = (tally: Tally | undefined, tool: string): Tally => {
   const server = mcpServer(tool)
   const mcp = { ...(tally?.mcp ?? {}) }
+  const builtIn = { ...(tally?.builtIn ?? {}) }
   if (server !== undefined) mcp[server] = (mcp[server] ?? 0) + 1
-  return { total: (tally?.total ?? 0) + 1, mcp }
+  else builtIn[tool] = (builtIn[tool] ?? 0) + 1
+  return { total: (tally?.total ?? 0) + 1, mcp, builtIn, running: toolLabel(tool) }
 }
 
-/** One line for the band: "12 tool calls · 9 built-in · 3 MCP (Gmail 2, microsoft-learn 1)". */
+/** Clears the running tool once it finishes, unless another call has started since. */
+export const finishCall = (tally: Tally | undefined, tool: string): Tally | undefined =>
+  tally && tally.running === toolLabel(tool) ? { ...tally, running: undefined } : tally
+
+const byCount = (counts: Record<string, number>) =>
+  Object.entries(counts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name, n]) => `${name} ${n}`)
+    .join(', ')
+
+/** One line for the band: "12 tool calls · Built-in 9: Bash 5, Read 4 · MCP 3: Gmail 2, microsoft-learn 1". */
 export const tallyLine = (tally: Tally | undefined) => {
   const total = tally?.total ?? 0
-  const servers = Object.entries(tally?.mcp ?? {}).sort((a, b) => b[1] - a[1])
-  const mcpTotal = servers.reduce((n, [, c]) => n + c, 0)
-  const builtIn = total - mcpTotal
-  const head = `${total} tool call${total === 1 ? '' : 's'}`
-  if (mcpTotal === 0) return head
-  const mcp = `${mcpTotal} MCP (${servers.map(([s, c]) => `${s} ${c}`).join(', ')})`
-  return builtIn > 0 ? `${head} · ${builtIn} built-in · ${mcp}` : `${head} · ${mcp}`
+  const mcp = tally?.mcp ?? {}
+  const mcpTotal = Object.values(mcp).reduce((n, c) => n + c, 0)
+  const builtInTotal = total - mcpTotal
+  const parts = [`${total} tool call${total === 1 ? '' : 's'}`]
+  if (builtInTotal > 0) {
+    // A tally counted before tools were named has only the number.
+    const named = tally?.builtIn && Object.keys(tally.builtIn).length > 0
+    parts.push(named ? `Built-in ${builtInTotal}: ${byCount(tally!.builtIn!)}` : `${builtInTotal} built-in`)
+  }
+  if (mcpTotal > 0) parts.push(`MCP ${mcpTotal}: ${byCount(mcp)}`)
+  return parts.join(' · ')
 }
 
 const firstLine = (text: string, max = 80) => {
@@ -211,12 +233,16 @@ export const register: Register = on => {
     return { result: 'Checklist updated.' }
   })
 
-  // Tally every other tool call (built-in, MCP, subagents') since the prompt.
+  // Tally every other tool call (built-in, MCP, subagents') since the prompt,
+  // naming the one running until it finishes.
   on('tool.call', async ($, e, next) => {
-    if (e.tool !== TOOL_ID) {
-      await update($, checklist, cur => (cur === null ? cur : { ...cur, tally: countCall(cur.tally, e.tool) })).catch(() => {})
+    if (e.tool === TOOL_ID) return next(e)
+    await update($, checklist, cur => (cur === null ? cur : { ...cur, tally: countCall(cur.tally, e.tool) })).catch(() => {})
+    try {
+      return await next(e)
+    } finally {
+      await update($, checklist, cur => (cur === null ? cur : { ...cur, tally: finishCall(cur.tally, e.tool) })).catch(() => {})
     }
-    return next(e)
   })
 
   on('command.run', { command: 'checklist' }, async $ => {
@@ -273,6 +299,10 @@ export const register: Register = on => {
     const pctText = `${percent}%`
     const barW = Math.max(8, inner - labelW - pctText.length - 1)
     const filled = total === 0 ? 0 : Math.round((done / total) * barW)
+
+    // The tool running right now sits at the right end of the tally row, while a turn is going.
+    const running = e.props.isWorking && list.tally?.running ? `▶ ${fit(list.tally.running, 40).trimEnd()}` : ''
+    const runningW = running ? running.length + 2 : 0
 
     const textW = Math.max(16, Math.min(44, Math.floor(inner * 0.4)))
     const miniW = 12
@@ -336,10 +366,13 @@ export const register: Register = on => {
           </Box>
 
           {list.tally && list.tally.total > 0 ? (
-            <Text dimColor>
-              <Text color={BLUE}>⚙ </Text>
-              {fit(tallyLine(list.tally), inner - 2).trimEnd()}
-            </Text>
+            <Box flexDirection="row" justifyContent="space-between">
+              <Text dimColor>
+                <Text color={BLUE}>⚙ </Text>
+                {fit(tallyLine(list.tally), inner - 2 - runningW).trimEnd()}
+              </Text>
+              {running ? <Text color={VIOLET_TO}>{running}</Text> : null}
+            </Box>
           ) : null}
 
           {list.steps.map((step, i) => {
