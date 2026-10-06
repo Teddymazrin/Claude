@@ -14,6 +14,11 @@
       "name": "control-panel",
       "source": "./claude-code-mods/control-panel",
       "description": "Status row, model and effort picker, mod switches"
+    },
+    {
+      "name": "action-steps",
+      "source": "./claude-code-mods/action-steps",
+      "description": "Numbered follow-up steps in a side pane that opens by itself after a task"
     }
   ]
 }
