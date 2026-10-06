@@ -12,10 +12,10 @@ A live task checklist above the prompt: the goal, a progress bar, each step and 
 
 ## Control Panel
 
-Shows as **Claude Tools** in the footer.
+Shows as **◆ Control Panel** in the footer.
 
 - A status row under the prompt: `Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | 6% 4h 12m` (plan, model, effort, context used, 5-hour usage and time to reset)
-- A **◆ Claude Tools** button (or `/claude-tools`) that opens a panel to pick the model and effort and switch your other mods on and off
+- A **◆ Control Panel** button (or `/control-panel`) that opens a panel to pick the model and effort and switch your other mods on and off
 
 ```
 /plugin install control-panel --marketplace Teddymazrin/Claude

@@ -12,7 +12,7 @@
     },
     {
       "name": "control-panel",
-      "source": "./claude-code-mods/claude-tools",
+      "source": "./claude-code-mods/control-panel",
       "description": "Status row, model and effort picker, mod switches"
     }
   ]

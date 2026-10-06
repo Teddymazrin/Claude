@@ -5,8 +5,8 @@ import type { Choice, Effort, Meter, Mod, Plan, Seen } from '../types'
 
 const SELF = 'control-panel'
 const PANE = 'control-panel'
-const TITLE = 'Claude Tools'
-const COMMAND = 'claude-tools'
+const TITLE = 'Control Panel'
+const COMMAND = 'control-panel'
 
 // Palette: warm gold frame, orange for the model, mauve for effort, green for on.
 const GOLD = '#d9a441'
@@ -246,7 +246,7 @@ export const register: Register = on => {
     $.ui.status(undefined)
 
     // Once per session: restore the saved model pick, and reload switched-off mods
-    // that loaded before Claude Tools and so slipped past plugin.register.
+    // that loaded before Control Panel and so slipped past plugin.register.
     if (!(await read($, booted))) {
       await update($, booted, () => true)
       if (saved) await update($, choice, () => ({ model: saved.model ?? null, effort: saved.effort ?? null }))
@@ -295,7 +295,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" alignItems="flex-start">
-        <Box key="claude-tools-status" flexDirection="row">
+        <Box key="control-panel-status" flexDirection="row">
           <Text color={GOLD}>{m.plan ?? '…'}</Text>
           {sep}
           <Text bold color={ORANGE}>{model ? modelName(model) : '…'}</Text>
@@ -326,8 +326,8 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" alignItems="flex-end">
         {!isEmptyEngine && below}
-        <Box key="claude-tools-chip" backgroundColor={SLATE} paddingX={1} hover={{ backgroundColor: ORANGE }}>
-          <Button key="open-claude-tools" plain label={label} hover={{ bold: true }} onPress={() => openPane($)} />
+        <Box key="control-panel-chip" backgroundColor={SLATE} paddingX={1} hover={{ backgroundColor: ORANGE }}>
+          <Button key="open-control-panel" plain label={label} hover={{ bold: true }} onPress={() => openPane($)} />
         </Box>
       </Box>
     )

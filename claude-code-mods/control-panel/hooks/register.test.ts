@@ -3,9 +3,9 @@ import { expect, test } from 'claude-code/testing'
 import { EFFORTS, MODELS, applyChoice, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
-  const win = ['C:', 'mods', 'abc', 'claude-tools'].join(String.fromCharCode(92))
+  const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
   expect(parentOf(win)).toBe(win.slice(0, win.lastIndexOf(String.fromCharCode(92))))
-  expect(parentOf('/home/me/mods/claude-tools')).toBe('/home/me/mods')
+  expect(parentOf('/home/me/mods/control-panel')).toBe('/home/me/mods')
 })
 
 test('toggles a mod in and out of the switched-off list', () => {
@@ -20,7 +20,7 @@ test('names the model and effort the next request uses', () => {
   expect(currentText({ model: null, effort: null }, { model: 'claude-sonnet-5-5', effort: 'xhigh' })).toBe(
     'Sonnet 5.5 · XHigh',
   )
-  expect(chipText()).toBe('◆ Claude Tools')
+  expect(chipText()).toBe('◆ Control Panel')
 })
 
 test('applies only the overrides that are set', () => {
