@@ -73,4 +73,4 @@ From inside Claude Code you can also run `/plugin`, find the mod under your inst
 ## Notes
 
 - Mods are a hooks-module plugin feature of the Claude Code terminal.
-- Control Panel decides Subscription vs API from your environment (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, Bedrock/Vertex flags) and whether `~/.claude.json` holds an API key. It only checks for the key; nothing is sent anywhere.
+- **Subscription or API:** the first item in Control Panel's status row shows how the session is billed: **Subscription** (your Claude plan's usage limits) or **API** (an API key, Bedrock or Vertex, billed per token). It only shows this; it doesn't change how you're billed. Control Panel works it out on your computer: Subscription once Claude Code reports plan usage limits, otherwise API if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, a Bedrock/Vertex setting or a key in `~/.claude.json` is present. It only checks that a key exists; it never reads, stores or sends the key.
