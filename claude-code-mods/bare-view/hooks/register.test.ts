@@ -1,6 +1,21 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bar, elapsed, fit, isInProgress, mix, parseChecklist, progress, REMINDER, statusWord } from './register'
+import { bar, countCall, elapsed, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyLine } from './register'
+
+test('tallies tool calls and groups MCP ones by server', () => {
+  expect(mcpServer('Bash')).toBeUndefined()
+  expect(mcpServer('mcp__claude_ai_Gmail__search')).toBe('Gmail')
+  expect(mcpServer('mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search')).toBe('microsoft-learn')
+  let t = countCall(undefined, 'Bash')
+  t = countCall(t, 'mcp__claude_ai_Gmail__search')
+  t = countCall(t, 'mcp__claude_ai_Gmail__read')
+  t = countCall(t, 'mcp__ide__getDiagnostics')
+  expect(t).toEqual({ total: 4, mcp: { Gmail: 2, ide: 1 } })
+  expect(tallyLine(t)).toBe('4 tool calls · 1 built-in · 3 MCP (Gmail 2, ide 1)')
+  expect(tallyLine({ total: 3, mcp: { 'microsoft-learn': 1 } })).toBe('3 tool calls · 2 built-in · 1 MCP (microsoft-learn 1)')
+  expect(tallyLine({ total: 2, mcp: { Gmail: 2 } })).toBe('2 tool calls · 2 MCP (Gmail 2)')
+  expect(tallyLine({ total: 1, mcp: {} })).toBe('1 tool call')
+})
 
 test('parses and scores a checklist', () => {
   const list = parseChecklist({

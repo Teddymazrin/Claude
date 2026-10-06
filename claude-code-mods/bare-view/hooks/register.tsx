@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Checklist, Step, StepStatus } from '../types'
+import type { Checklist, Step, StepStatus, Tally } from '../types'
 
 const PLUGIN = 'bare-view'
 const TOOL = 'checklist'
@@ -59,6 +59,33 @@ export const parseChecklist = (input: Record<string, unknown>): Checklist | stri
     steps.push({ text: s.text.trim(), status })
   }
   return { goal, steps }
+}
+
+/** The MCP server a tool name belongs to (`mcp__<server>__<tool>`), shortened; undefined for a built-in tool. */
+export const mcpServer = (tool: string) => {
+  const match = /^mcp__(.+?)__/.exec(tool)
+  if (!match) return undefined
+  const server = match[1]!.replace(/^claude_ai_/, '').replace(/^plugin_[^_]+_/, '')
+  return server.replace(/_/g, ' ')
+}
+
+export const countCall = (tally: Tally | undefined, tool: string): Tally => {
+  const server = mcpServer(tool)
+  const mcp = { ...(tally?.mcp ?? {}) }
+  if (server !== undefined) mcp[server] = (mcp[server] ?? 0) + 1
+  return { total: (tally?.total ?? 0) + 1, mcp }
+}
+
+/** One line for the band: "12 tool calls · 9 built-in · 3 MCP (Gmail 2, microsoft-learn 1)". */
+export const tallyLine = (tally: Tally | undefined) => {
+  const total = tally?.total ?? 0
+  const servers = Object.entries(tally?.mcp ?? {}).sort((a, b) => b[1] - a[1])
+  const mcpTotal = servers.reduce((n, [, c]) => n + c, 0)
+  const builtIn = total - mcpTotal
+  const head = `${total} tool call${total === 1 ? '' : 's'}`
+  if (mcpTotal === 0) return head
+  const mcp = `${mcpTotal} MCP (${servers.map(([s, c]) => `${s} ${c}`).join(', ')})`
+  return builtIn > 0 ? `${head} · ${builtIn} built-in · ${mcp}` : `${head} · ${mcp}`
 }
 
 const firstLine = (text: string, max = 80) => {
@@ -178,9 +205,18 @@ export const register: Register = on => {
     const before = await read($, checklist)
     const startedAt = before?.startedAt ?? now
     const next: Checklist = { ...parsed, startedAt, ...(isInProgress(parsed) ? {} : { finishedAt: now }) }
-    await update($, checklist, () => next)
+    // Keep the tally counted so far; a concurrent count may land meanwhile, so read it inside the update.
+    await update($, checklist, cur => ({ ...next, ...(cur?.tally ? { tally: cur.tally } : {}) }))
     if (isInProgress(next)) void tick($).catch(() => {})
     return { result: 'Checklist updated.' }
+  })
+
+  // Tally every other tool call (built-in, MCP, subagents') since the prompt.
+  on('tool.call', async ($, e, next) => {
+    if (e.tool !== TOOL_ID) {
+      await update($, checklist, cur => (cur === null ? cur : { ...cur, tally: countCall(cur.tally, e.tool) })).catch(() => {})
+    }
+    return next(e)
   })
 
   on('command.run', { command: 'checklist' }, async $ => {
@@ -298,6 +334,13 @@ export const register: Register = on => {
               {pctText}
             </Text>
           </Box>
+
+          {list.tally && list.tally.total > 0 ? (
+            <Text dimColor>
+              <Text color={BLUE}>⚙ </Text>
+              {fit(tallyLine(list.tally), inner - 2).trimEnd()}
+            </Text>
+          ) : null}
 
           {list.steps.map((step, i) => {
             const word = statusWord(list.steps, i)
