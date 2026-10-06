@@ -12,10 +12,23 @@ A live task checklist above the prompt: the goal, a progress bar, each step and 
 
 ## Control Panel
 
-Shows as **◆ Control Panel** in the footer.
+Shows as **◆ Control Panel** in the footer, with a status row under the prompt:
 
-- A status row under the prompt: `Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | 6% 4h 12m` (plan, model, effort, context used, 5-hour usage and time to reset)
-- A **◆ Control Panel** button (or `/control-panel`) that opens a panel to pick the model and effort and switch your other mods on and off
+```
+Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | 6% 4h 12m
+```
+
+- **Subscription / API:** how this session is billed. **Subscription** is your Claude plan (usage comes out of its limits); **API** is an API key, Bedrock or Vertex (billed per token). It only shows this, it doesn't change it. Worked out on your computer: Subscription once Claude Code reports plan usage limits, otherwise API if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, a Bedrock/Vertex setting or a key in `~/.claude.json` is present. It only checks that a key exists; it never reads, stores or sends it
+- **Model** (`Opus 5.5`): the model your requests go out with: the one you picked in the panel, or what Claude Code last used
+- **Effort** (`effort Medium`): the reasoning effort your requests go out with, picked the same way
+- **Context** (`ctx ░░░░░░░░ 1%`): how full the conversation's context window is. Green under 50%, gold to 75%, orange above
+- **Usage** (`6% 4h 12m`): how much of your plan's 5-hour usage limit you've used, and the time until it resets. Shown on a subscription once Claude Code reports it
+
+Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
+
+- **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`)
+- **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
+- **Mods:** switch each of your installed mods on or off
 
 ```
 /plugin install control-panel --marketplace Teddymazrin/Claude
@@ -69,8 +82,3 @@ claude plugin update action-steps@teddymazrin-mods
 Then restart Claude Code, or run `/reload-plugins` in a session that is already open. A mod that is already on the latest version is left as it is. `claude plugin list` shows what is installed and at which version.
 
 From inside Claude Code you can also run `/plugin`, find the mod under your installed plugins and update it from there.
-
-## Notes
-
-- Mods are a hooks-module plugin feature of the Claude Code terminal.
-- **Subscription or API:** the first item in Control Panel's status row shows how the session is billed: **Subscription** (your Claude plan's usage limits) or **API** (an API key, Bedrock or Vertex, billed per token). It only shows this; it doesn't change how you're billed. Control Panel works it out on your computer: Subscription once Claude Code reports plan usage limits, otherwise API if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, a Bedrock/Vertex setting or a key in `~/.claude.json` is present. It only checks that a key exists; it never reads, stores or sends the key.
