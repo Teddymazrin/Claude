@@ -64,6 +64,15 @@ export const ago = (ms: number) => {
   return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`
 }
 
+/** "5 steps", then "5 steps · 2 done" once some are ticked, "All 5 done" at the end. */
+export const countText = (set: StepSet) => {
+  const total = set.steps.length
+  const done = doneCount(set)
+  const steps = `${total} step${total === 1 ? '' : 's'}`
+  if (done === 0) return steps
+  return done === total ? `All ${total} done` : `${steps} · ${done} done`
+}
+
 // Every change goes to the session's state (redraws the pane) and the store (kept across sessions).
 async function save($: EngineInterface, fn: (list: StepSet[]) => StepSet[]) {
   const next = await update($, sets, list => fn(list))
@@ -270,7 +279,7 @@ export const register: Register = on => {
         {header}
         <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
           <Text bold>{current.title}</Text>
-          <Text color={done === current.steps.length ? GREEN : AMBER}>{`${done}/${current.steps.length}`}</Text>
+          <Text color={done === current.steps.length ? GREEN : AMBER}>{countText(current)}</Text>
         </Box>
         {current.steps.map((step, i) => stepLine($, e, current, step, i))}
 
@@ -284,7 +293,7 @@ export const register: Register = on => {
             <Box flexGrow={1} flexShrink={1}>
               <Button key={`expand-${set.id}`} plain label={`▸ ${set.title}`} hover={{ bold: true }} onPress={() => update($, expanded, () => set.id)} />
             </Box>
-            <Text dimColor>{` ${doneCount(set)}/${set.steps.length} · ${ago(now - set.at)} `}</Text>
+            <Text dimColor>{` ${countText(set)} · ${ago(now - set.at)} `}</Text>
             <Button key={`remove-${set.id}`} plain label="✕" hover={{ bold: true }} onPress={() => save($, l => l.filter(s => s.id !== set.id))} />
           </Box>
         ))}

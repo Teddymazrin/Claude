@@ -26,11 +26,13 @@ test('the pane draws numbered steps and ticks one off', async ($, on) => {
     const ui = await $.ui.mount({ plugin: 'action-steps', surface, ...PANE } as never)
     expect(await ui.find({ type: 'Text', text: /First thing/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Get-Thing/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^2 steps$/ })).toBeDefined()
     await ui.unmount()
   }
   const ui = await $.ui.mount({ plugin: 'action-steps', surface: 'terminal', ...PANE } as never)
   await ui.press({ key: 'tick-5000-0' })
   expect(await ui.find({ type: 'Text', text: /Get-Thing/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /2 steps · 1 done/ })).toBeDefined()
   await ui.unmount()
 })
 

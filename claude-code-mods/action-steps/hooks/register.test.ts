@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { addSet, ago, doneCount, parseSet, REMINDER, toggleStep } from './register'
+import { addSet, ago, countText, doneCount, parseSet, REMINDER, toggleStep } from './register'
 
 test('parses a set of next steps', () => {
   const set = parseSet(
@@ -51,4 +51,12 @@ test('reminder names the tool and how to load it; ages read short', () => {
   expect(ago(30_000)).toBe('just now')
   expect(ago(5 * 60_000)).toBe('5m ago')
   expect(ago(3 * 3_600_000)).toBe('3h ago')
+})
+
+test('the count reads as a number of steps, not 0/5', () => {
+  const mk = (done: number, total: number) => ({ id: '1', title: 't', at: 0, steps: Array.from({ length: total }, (_, i) => ({ text: 's', isDone: i < done })) })
+  expect(countText(mk(0, 5))).toBe('5 steps')
+  expect(countText(mk(0, 1))).toBe('1 step')
+  expect(countText(mk(2, 5))).toBe('5 steps · 2 done')
+  expect(countText(mk(5, 5))).toBe('All 5 done')
 })

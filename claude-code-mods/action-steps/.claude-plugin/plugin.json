@@ -1,6 +1,6 @@
 {
   "name": "action-steps",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Action Steps pane. Pins what you need to do after a task (run the script, set the parameter, check the portal) in a side pane you can tick off, instead of losing it in the chat",
   "author": {
     "name": "Teddymazrin"

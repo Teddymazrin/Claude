@@ -26,7 +26,7 @@ Shows as **◆ Control Panel** in the footer.
 When a task leaves you something to do yourself (run the script, set a parameter, check the portal), Claude sends the steps to a side pane that opens by itself, so they don't get lost in the chat:
 
 ```
-▸ Check my Azure roles                          0/3
+Check my Azure roles                       3 steps
 1: Install the Az module
      Install-Module Az -Scope CurrentUser   [Copy]
 2: Run the script with your tenant ID
@@ -34,7 +34,7 @@ When a task leaves you something to do yourself (run the script, set a parameter
 3: Sign in when the browser opens
 ```
 
-- Click a number to tick that step off; **Copy** puts its command on the clipboard
+- Click a number to tick that step off (the count then reads `3 steps · 1 done`); **Copy** puts its command on the clipboard
 - Earlier tasks stay listed under **Earlier**, kept across sessions (the last 8)
 - The pane docks on the right in fullscreen from 110 columns; in a narrower window the steps show in a box above the prompt instead. `/action-steps` opens the pane by hand
 - Close it with ✕; it opens again the next time there are new steps
@@ -42,6 +42,20 @@ When a task leaves you something to do yourself (run the script, set a parameter
 ```
 /plugin install action-steps --marketplace Teddymazrin/Claude
 ```
+
+## Updating the mods
+
+`/plugin update` compares against your local copy of the marketplace, not GitHub, so refresh that copy first:
+
+```
+/plugin marketplace update teddymazrin-mods
+/plugin update bare-view@teddymazrin-mods
+/plugin update control-panel@teddymazrin-mods
+/plugin update action-steps@teddymazrin-mods
+/reload-plugins
+```
+
+The refresh says how many mods have a new version (`1 plugin bumped`); you only need the update lines for those. `/plugin` lists what is installed and at which version.
 
 ## Notes
 
