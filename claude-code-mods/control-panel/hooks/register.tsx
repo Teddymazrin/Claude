@@ -7,6 +7,7 @@ const SELF = 'control-panel'
 const PANE = 'control-panel'
 const TITLE = 'Control Panel'
 const COMMAND = 'control-panel'
+const RELOAD = 'reload-plugins'
 
 // Palette: warm gold frame, orange for the model, mauve for effort, green for on.
 const GOLD = '#d9a441'
@@ -279,11 +280,14 @@ async function toggle($: EngineInterface, mod: Mod) {
   const word = isOn ? 'on' : 'off'
   if (isInstalled(mod.root)) {
     const isSet = await setInstalledEnabled($, mod, isOn).catch(() => false)
-    $.ui.toast(
-      isSet
-        ? `${titled(mod.name)} ${word} · run /reload-plugins to apply`
-        : `${titled(mod.name)} ${word} here, but settings.json was not updated · use /plugin to ${isOn ? 'enable' : 'disable'} it`,
-    )
+    if (!isSet) {
+      $.ui.toast(`${titled(mod.name)} ${word} here, but settings.json was not updated · use /plugin to ${isOn ? 'enable' : 'disable'} it`)
+      return
+    }
+    $.ui.toast(`${titled(mod.name)} ${word}`)
+    // Last: the reload runs once the session is idle and reloads this mod too.
+    // Not awaited, since this environment may be gone by the time it settles.
+    $.command.run({ command: RELOAD }).catch(() => $.ui.toast(`${titled(mod.name)} ${word} · run /${RELOAD} to apply`))
     return
   }
   await poke($, mod).catch(() => {})
