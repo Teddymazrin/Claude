@@ -169,7 +169,29 @@ async function remember($: EngineInterface, root: string) {
   if (!roots.includes(root)) await $.store.set('roots', [...roots, root])
 }
 
+/** Where each installed plugin lives, from the engine's installed_plugins.json. */
+export const installedRoots = (text: string): string[] => {
+  try {
+    const data = JSON.parse(text) as { plugins?: Record<string, Array<{ installPath?: unknown }>> }
+    return Object.values(data.plugins ?? {})
+      .flat()
+      .map(entry => entry?.installPath)
+      .filter((path): path is string => typeof path === 'string')
+  } catch {
+    return []
+  }
+}
+
+/** Installed copies live under ~/.claude/plugins/cache, which no watcher reloads. */
+export const isInstalled = (root: string) => /[\\/]plugins[\\/]cache[\\/]/.test(root)
+
+const subfolders = async ($: EngineInterface, folder: string) =>
+  (await $.fs.list(folder).catch(() => [])).filter(entry => entry.kind === 'dir').map(entry => `${folder}/${entry.name}`)
+
+// A mod is a plugin with a hooks module; skills-only and command-hook plugins are not.
 async function readMod($: EngineInterface, root: string): Promise<Mod | undefined> {
+  const hooks = await $.fs.read(`${root}/hooks/hooks.json`).catch(() => '')
+  if (!/"modules"\s*:/.test(hooks)) return undefined
   const manifest = await $.fs
     .read(`${root}/.claude-plugin/plugin.json`)
     .then(text => JSON.parse(text) as { name?: string; description?: string })
@@ -178,15 +200,17 @@ async function readMod($: EngineInterface, root: string): Promise<Mod | undefine
   return { name: manifest.name, description: manifest.description ?? '', root }
 }
 
-// Every mod folder next to this one, then every mod the engine has loaded from
-// anywhere else; one row per name, and a folder that is gone drops out.
+// Every mod on this machine: the ones the engine has loaded, every installed
+// plugin, every mods folder under ~/.claude/dev-mods, and this one's siblings.
+// One row per name; a folder that is gone drops out.
 async function scan($: EngineInterface): Promise<Mod[]> {
-  const folder = parentOf($.plugin.root)
-  const siblings = (await $.fs.list(folder).catch(() => []))
-    .filter(entry => entry.kind === 'dir')
-    .map(entry => `${folder}/${entry.name}`)
+  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
+  const claude = `${home}/.claude`
+  const installed = home ? installedRoots(await $.fs.read(`${claude}/plugins/installed_plugins.json`).catch(() => '')) : []
+  const dev = home ? (await Promise.all((await subfolders($, `${claude}/dev-mods`)).map(f => subfolders($, f)))).flat() : []
+  const siblings = await subfolders($, parentOf($.plugin.root))
   const found = new Map<string, Mod>()
-  for (const root of [...siblings, ...(await storedRoots($))]) {
+  for (const root of [...(await storedRoots($)), ...installed, ...siblings, ...dev]) {
     const mod = await readMod($, root)
     if (mod && !found.has(mod.name)) found.set(mod.name, mod)
   }
@@ -209,8 +233,13 @@ async function toggle($: EngineInterface, mod: Mod) {
   const next = toggled(await storedDisabled($), mod.name)
   await $.store.set('disabled', next)
   await update($, disabled, () => next)
-  await poke($, mod)
-  $.ui.toast(`${titled(mod.name)} ${next.includes(mod.name) ? 'off' : 'on'}`)
+  const word = next.includes(mod.name) ? 'off' : 'on'
+  if (isInstalled(mod.root)) {
+    $.ui.toast(`${titled(mod.name)} ${word} · run /reload-plugins to apply`)
+    return
+  }
+  await poke($, mod).catch(() => {})
+  $.ui.toast(`${titled(mod.name)} ${word}`)
 }
 
 async function pick($: EngineInterface, patch: Partial<Choice>) {

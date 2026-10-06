@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EFFORTS, MODELS, applyChoice, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { EFFORTS, MODELS, applyChoice, installedRoots, isInstalled, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -71,4 +71,15 @@ test('builds the footer line', () => {
     'Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | 6% 4h 12m',
   )
   expect(statusText({ plan: 'API', context: null, limit: null }, null, null, now)).toBe('API | … | effort … | ctx ░░░░░░░░ …')
+})
+
+test('reads installed plugin folders and tells them from dev folders', () => {
+  const json = JSON.stringify({
+    version: 2,
+    plugins: { 'a@m': [{ installPath: 'C:\\Users\\me\\.claude\\plugins\\cache\\m\\a\\1.0.0' }], 'b@m': [{}] },
+  })
+  expect(installedRoots(json)).toEqual(['C:\\Users\\me\\.claude\\plugins\\cache\\m\\a\\1.0.0'])
+  expect(installedRoots('not json')).toEqual([])
+  expect(isInstalled('C:\\Users\\me\\.claude\\plugins\\cache\\m\\a\\1.0.0')).toBe(true)
+  expect(isInstalled('/home/me/.claude/dev-mods/abc/a')).toBe(false)
 })
