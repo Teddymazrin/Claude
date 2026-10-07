@@ -1,7 +1,7 @@
 {
   "name": "context-handoff",
-  "version": "1.0.1",
-  "description": "Context Handoff. Warns as the context window fills, writes a handoff note for the project with /handoff, and picks it back up after /clear or in a new session with /handoff-resume",
+  "version": "1.1.0",
+  "description": "Context Handoff. Warns as the context window fills, writes a handoff note for the project with /handoff, and opens it in a pane with Copy prompt and Copy note buttons, ready to paste after /clear",
   "author": {
     "name": "Teddymazrin"
   },

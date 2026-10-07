@@ -93,10 +93,14 @@ Keeps a long session from losing its thread when the context window fills.
 
 - **Warnings:** a toast at 70% context full, and a more urgent one at 85%. Each shows once, and again after `/clear` or a compact brings the context back down
 - **`/handoff`:** Claude writes a handoff note for this project: the goal, what's done, what's in progress, next steps, key files, and decisions and gotchas. Notes are saved in `~/.claude/handoffs/`, one per project folder, and a new note replaces the old one
-- **`/handoff-resume`:** Claude reads the note, sums up where things stand and waits for you to confirm the next step
+- **The Handoff pane:** once the note is saved it opens on the right with the note itself and two buttons:
+  - **⧉ Copy prompt** copies a short prompt that tells Claude to read the note, sum up where things stand and wait for you to confirm the next step
+  - **⧉ Copy note** copies the whole note, for another session or anywhere else
+- In a narrow window the pane can't dock, so a box above the prompt shows the same buttons, plus **▸ Open** for the full note
+- **`/handoff open`:** shows the saved note again without writing a new one
 - **At session start:** when a note from the last 7 days exists for the project, a toast reminds you it's there
 
-The usual flow is `/handoff`, then `/clear`, then `/handoff-resume`.
+The usual flow is `/handoff`, then **Copy prompt**, then `/clear` (or **Clear** in Control Panel), then paste.
 
 ```
 /plugin install context-handoff@teddymazrin-mods
