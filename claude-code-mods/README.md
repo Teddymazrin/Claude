@@ -55,7 +55,7 @@ Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
 - **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`)
 - **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
-- **Run:** **↻ Reload plugins** (key `r`) runs `/reload-plugins`; **⌫ Clear** (key `c`) runs `/clear` after asking you to confirm
+- **Run:** **↻ Reload plugins** runs `/reload-plugins`; **⌫ Clear** runs `/clear` after asking you to confirm
 - **Mods:** switch each installed mod on or off. The switch is saved straight away, and one `/reload-plugins` runs 1.5 seconds after your last click, so flipping several mods quickly applies them all at once
 
 ## Action Steps

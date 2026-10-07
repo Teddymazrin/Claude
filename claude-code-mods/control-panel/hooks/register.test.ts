@@ -118,9 +118,8 @@ test('runs one reload after a burst of switches, with the last one', () => {
   expect(fired).toEqual(['on', 'again'])
 })
 
-test('quick commands use their own keys and only /clear asks first', () => {
-  const taken = [...MODELS.map(m => m.hotkey), ...EFFORTS.map(f => f.hotkey)]
-  for (const q of QUICK) expect(taken.includes(q.hotkey)).toBe(false)
+test('quick commands are plain buttons and only /clear asks first', () => {
+  for (const q of QUICK) expect('hotkey' in q).toBe(false)
   expect(QUICK.map(q => q.command)).toEqual(['reload-plugins', 'clear'])
   expect(QUICK.filter(q => q.confirm).map(q => q.command)).toEqual(['clear'])
 })

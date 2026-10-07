@@ -324,9 +324,9 @@ async function switchMod($: EngineInterface, mod: Mod) {
 }
 
 /** The quick commands row: a button per slash command, run as if typed. */
-export const QUICK: ReadonlyArray<{ command: string; label: string; hotkey: string; confirm?: string }> = [
-  { command: RELOAD, label: '↻ Reload plugins', hotkey: 'r' },
-  { command: 'clear', label: '⌫ Clear', hotkey: 'c', confirm: 'Clear the conversation and start fresh?' },
+export const QUICK: ReadonlyArray<{ command: string; label: string; confirm?: string }> = [
+  { command: RELOAD, label: '↻ Reload plugins' },
+  { command: 'clear', label: '⌫ Clear', confirm: 'Clear the conversation and start fresh?' },
 ]
 
 // Runs once the session is idle; /clear asks first, since it can't be undone.
@@ -510,7 +510,7 @@ export const register: Register = on => {
         )}
         {pickerRow(
           'RUN',
-          QUICK.map(q => option(`quick-${q.command}`, q.label, false, GOLD, q.hotkey, () => runQuick($, q))),
+          QUICK.map(q => option(`quick-${q.command}`, q.label, false, GOLD, '', () => runQuick($, q))),
         )}
 
         {section('Mods')}
