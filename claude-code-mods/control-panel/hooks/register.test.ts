@@ -171,11 +171,10 @@ test('a different model starts with a cold cache', () => {
   expect(cacheText(now - 18 * 60_000, hour, now, 'claude-sonnet-5-5')).toBe('cache 42m')
 })
 
-test('shows the Context button only while Context Lens is installed and on', () => {
-  const lens = [{ name: 'context-lens' }]
-  expect(visibleQuick([], []).map(q => q.command)).toEqual(['reload-plugins', 'clear'])
-  expect(visibleQuick(lens, []).map(q => q.command)).toEqual(['context-lens', 'reload-plugins', 'clear'])
-  expect(visibleQuick(lens, ['context-lens']).map(q => q.command)).toEqual(['reload-plugins', 'clear'])
+test('shows Context Lens only while its command is loaded', () => {
+  expect(visibleQuick([]).map(q => q.command)).toEqual(['reload-plugins', 'clear'])
+  expect(visibleQuick(['context-lens']).map(q => q.command)).toEqual(['context-lens', 'reload-plugins', 'clear'])
+  expect(visibleQuick(['context-lens:context-lens']).map(q => q.command)).toEqual(['context-lens', 'reload-plugins', 'clear'])
 })
 
 test('every action says what it does', () => {

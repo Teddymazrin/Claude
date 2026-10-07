@@ -24,6 +24,7 @@ export const breakdown = {
     { name: 'mcp__b__z', serverName: 'b', tokens: 999, isLoaded: false },
   ],
   agents: [],
+  skills: { totalSkills: 10, includedSkills: 8, tokens: 800, skillFrontmatter: Array.from({ length: 8 }, (_, i) => ({ name: `skill-${i}`, source: 'plugin', pluginName: 'learn-coach', tokens: 100 + i })) },
   isAutoCompactEnabled: true,
   autoCompactThreshold: 184000,
   apiUsage: null,

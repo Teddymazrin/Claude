@@ -132,6 +132,19 @@ Shows where your context window is going, so you can see what to trim before it 
 - **Biggest items:** the top 5 memory files (such as each `CLAUDE.md`), MCP servers, skills and agents by tokens, so you can see which one to cut
 - **Updates by itself:** while the pane is open it refreshes after each turn with a quick local estimate, which costs nothing
 - **Count exactly** (key `c`): counts every category with the token-count API, as `/context` does. The footer says whether the numbers are **Estimated** or **Counted exactly**
+- **Show all:** each list shows its 5 biggest items; **▸ Show all** opens the full list. The Skills heading also says how many skills were left out of the listing because it ran over its token budget
+
+### Trimming your context with it
+
+1. **Open it and press `c`** at the start of a session, before you've done anything. That's your fixed cost, sent with every request.
+2. **Find the biggest row** and trim by what it is:
+   - **Messages:** the conversation itself. `/clear` before an unrelated task; mid-task, `/compact` or `/handoff` then `/clear`. Ask for targeted reads (a search, a line range) rather than whole files
+   - **MCP tools:** check **MCP servers**. Turn off any you don't use in this project with `/mcp`
+   - **Skills:** **▸ Show all**, and look at the note column for the plugin each came from. Uninstall or disable plugins you don't use with `/plugin`
+   - **Memory files:** a long `CLAUDE.md` is paid for on every request. Keep the rules, move reference material into files Claude reads only when needed
+   - **Custom agents:** remove agent definitions you no longer use
+   - **System prompt and system tools:** Claude Code's own; you can't trim these
+3. **Check again in a new session** with `c` to see what you saved.
 
 ## Updating the mods
 

@@ -402,9 +402,9 @@ export const QUICK: ReadonlyArray<{ command: string; label: string; blurb: strin
   { command: 'clear', label: 'Clear chat', blurb: 'Start a fresh conversation (asks first)', verb: 'Run', confirm: 'Clear the conversation and start fresh?' },
 ]
 
-/** The quick buttons to draw: one that opens another mod shows only while that mod is installed and on. */
-export const visibleQuick = (list: readonly { name: string }[], off: readonly string[]) =>
-  QUICK.filter(q => !q.mod || (list.some(m => m.name === q.mod) && !off.includes(q.mod)))
+/** The actions to draw: one that opens another mod shows only while that mod's command is loaded in this session. */
+export const visibleQuick = (commands: readonly string[]) =>
+  QUICK.filter(q => !q.mod || commands.some(name => name === q.command || name.endsWith(`:${q.command}`)))
 
 // Runs once the session is idle; /clear asks first, since it can't be undone.
 async function runQuick($: EngineInterface, quick: (typeof QUICK)[number]) {
@@ -571,6 +571,8 @@ export const register: Register = on => {
     const off = await read($, disabled)
     const c = await read($, choice)
     const s = await read($, seen)
+    // What the session can run now: a folder remembered from an earlier session doesn't count.
+    const commands = (await $.command.list().catch(() => [])).map(command => command.name)
     // With no pick yet, what the engine last sent is the one lit.
     const model = c.model ?? s?.model
     const effort = c.effort ?? s?.effort
@@ -636,7 +638,7 @@ export const register: Register = on => {
         })}
 
         {section('Actions')}
-        {visibleQuick(list, off).map(q => (
+        {visibleQuick(commands).map(q => (
           <Box key={`quick-${q.command}`} flexDirection="row" hover={{ backgroundColor: SLATE }}>
             <Box width={18} flexShrink={0}>
               <Text bold wrap="truncate-end">{q.label}</Text>

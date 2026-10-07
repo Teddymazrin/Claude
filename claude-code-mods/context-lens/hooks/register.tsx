@@ -6,6 +6,7 @@ import type { Detail, Item, Row, Snapshot } from '../types'
 const PANE = 'context-lens'
 const TITLE = 'Context Lens'
 const TOP = 5
+const KEEP = 200
 
 // The same palette as Control Panel, so the two read as one set.
 const GOLD = '#d9a441'
@@ -23,6 +24,7 @@ export const safeColor = (color: string, i: number) =>
 
 const snapshot = atom({ plugin: 'context-lens', key: 'snapshot' } as const, null)
 const busy = atom({ plugin: 'context-lens', key: 'busy' } as const, false)
+const expanded = atom({ plugin: 'context-lens', key: 'expanded' } as const, [])
 
 export const spaced = (text: string) => text.toUpperCase().split('').join(' ')
 
@@ -42,7 +44,10 @@ export const baseName = (path: string) => {
   return parts.length >= 2 ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}` : (parts[0] ?? path)
 }
 
-const top = (items: Item[]) => [...items].sort((a, b) => b.tokens - a.tokens).slice(0, TOP)
+const ranked = (items: Item[]) => [...items].sort((a, b) => b.tokens - a.tokens).slice(0, KEEP)
+
+/** The rows a list shows: its biggest few, or all of them once opened. */
+export const shown = (items: Item[], isOpen: boolean) => (isOpen ? items : items.slice(0, TOP))
 
 /** The engine's breakdown, trimmed to what the pane draws. */
 export function toSnapshot(b: SessionContextBreakdown, detail: Detail, at: number): Snapshot {
@@ -60,10 +65,11 @@ export function toSnapshot(b: SessionContextBreakdown, detail: Detail, at: numbe
     percent: b.percentage,
     compactAt: b.isAutoCompactEnabled ? (b.autoCompactThreshold ?? null) : null,
     rows: b.categories.map((c, i): Row => ({ name: c.name, tokens: c.tokens, color: safeColor(c.color, i), kind: c.kind })),
-    memory: top(b.memoryFiles.map(f => ({ label: baseName(f.path), note: f.type, tokens: f.tokens }))),
-    mcp: top([...servers].map(([name, tokens]) => ({ label: name, note: 'MCP', tokens }))),
-    skills: top((b.skills?.skillFrontmatter ?? []).map(s => ({ label: s.name, note: s.pluginName ?? s.source, tokens: s.tokens }))),
-    agents: top(b.agents.map(a => ({ label: a.agentType, note: a.source, tokens: a.tokens }))),
+    memory: ranked(b.memoryFiles.map(f => ({ label: baseName(f.path), note: f.type, tokens: f.tokens }))),
+    mcp: ranked([...servers].map(([name, tokens]) => ({ label: name, note: 'MCP', tokens }))),
+    skills: ranked((b.skills?.skillFrontmatter ?? []).map(s => ({ label: s.name, note: s.pluginName ?? s.source, tokens: s.tokens }))),
+    agents: ranked(b.agents.map(a => ({ label: a.agentType, note: a.source, tokens: a.tokens }))),
+    skillCount: b.skills ? { total: b.skills.totalSkills, listed: b.skills.includedSkills } : null,
   }
 }
 
@@ -181,25 +187,42 @@ export const register: Register = on => {
       </Box>
     )
 
-    const items = (label: string, list: Item[]) =>
-      list.length === 0
-        ? null
-        : [
-            section(label),
-            ...list.map(item => (
-              <Box key={`${label}-${item.label}`} flexDirection="row" paddingLeft={2}>
-                <Box flexGrow={1} flexShrink={1}>
-                  <Text wrap="truncate-end">{item.label}</Text>
-                </Box>
-                <Box width={14} flexShrink={0}>
-                  <Text dimColor wrap="truncate-end">{` ${item.note}`}</Text>
-                </Box>
-                <Box width={8} flexShrink={0} justifyContent="flex-end">
-                  <Text>{tokensText(item.tokens)}</Text>
-                </Box>
-              </Box>
-            )),
-          ]
+    const open = await read($, expanded)
+    const items = (label: string, list: Item[], note?: string) => {
+      if (list.length === 0) return null
+      const isOpen = open.includes(label)
+      const sum = list.reduce((n, item) => n + item.tokens, 0)
+      return [
+        <Box key={`head-${label}`} marginTop={1} paddingLeft={2} flexDirection="row">
+          <Text dimColor>{spaced(label)}</Text>
+          <Text dimColor>{`   ${list.length} · ${tokensText(sum)}${note ? ` · ${note}` : ''}`}</Text>
+        </Box>,
+        ...shown(list, isOpen).map(item => (
+          <Box key={`${label}-${item.label}-${item.note}`} flexDirection="row" paddingLeft={2}>
+            <Box flexGrow={1} flexShrink={1}>
+              <Text wrap="truncate-end">{item.label}</Text>
+            </Box>
+            <Box width={16} flexShrink={0}>
+              <Text dimColor wrap="truncate-end">{` ${item.note}`}</Text>
+            </Box>
+            <Box width={8} flexShrink={0} justifyContent="flex-end">
+              <Text>{tokensText(item.tokens)}</Text>
+            </Box>
+          </Box>
+        )),
+        list.length > TOP ? (
+          <Box key={`more-${label}`} paddingLeft={2} hover={{ backgroundColor: SLATE }}>
+            <Button
+              key={`toggle-${label}`}
+              plain
+              label={isOpen ? '▾ Show fewer' : `▸ Show all ${list.length}`}
+              hover={{ bold: true }}
+              onPress={() => update($, expanded, now => (now.includes(label) ? now.filter(one => one !== label) : [...now, label]))}
+            />
+          </Box>
+        ) : null,
+      ]
+    }
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={FRAME} paddingX={1}>
@@ -224,7 +247,7 @@ export const register: Register = on => {
 
         {items('Memory files', s.memory)}
         {items('MCP servers', s.mcp)}
-        {items('Skills', s.skills)}
+        {items('Skills', s.skills, s.skillCount && s.skillCount.listed < s.skillCount.total ? `${s.skillCount.total - s.skillCount.listed} left out of the listing` : undefined)}
         {items('Agents', s.agents)}
 
         <Box flexDirection="row" justifyContent="space-between" marginTop={1}>

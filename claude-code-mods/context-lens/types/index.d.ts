@@ -14,10 +14,11 @@ export type Snapshot = {
   mcp: Item[]
   skills: Item[]
   agents: Item[]
+  skillCount: { total: number; listed: number } | null
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    'context-lens': { snapshot: Snapshot | null; busy: boolean }
+    'context-lens': { snapshot: Snapshot | null; busy: boolean; expanded: string[] }
   }
 }

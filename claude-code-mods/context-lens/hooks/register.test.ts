@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { baseName, percentText, safeColor, stack, toSnapshot, tokensText } from './register'
+import { baseName, percentText, safeColor, shown, stack, toSnapshot, tokensText } from './register'
 import { breakdown } from './fixture'
 
 
@@ -24,7 +24,8 @@ test('trims the breakdown: biggest memory first, MCP grouped by loaded server', 
   expect(s.memory.map(m => m.label)).toEqual(['repo/CLAUDE.md', '.claude/CLAUDE.md'])
   expect(s.mcp).toEqual([{ label: 'a', note: 'MCP', tokens: 500 }])
   expect(s.compactAt).toBe(184000)
-  expect(s.skills).toEqual([])
+  expect(s.skills).toHaveLength(8)
+  expect(s.skillCount).toEqual({ total: 10, listed: 8 })
 })
 
 test('stacks used rows into the bar and leaves the rest free', () => {
@@ -39,4 +40,10 @@ test('keeps drawable colours and swaps the rest for the palette', () => {
   expect(safeColor('#AABBCC', 0)).toBe('#AABBCC')
   expect(safeColor('cyan_FOR_SUBAGENTS_ONLY', 0)).toBe('#e06c3c')
   expect(safeColor('', 1)).toBe('#d9a441')
+})
+
+test('keeps every item, shows the biggest five until opened', () => {
+  const items = Array.from({ length: 12 }, (_, i) => ({ label: `s${i}`, note: 'x', tokens: i }))
+  expect(shown(items, false)).toHaveLength(5)
+  expect(shown(items, true)).toHaveLength(12)
 })
