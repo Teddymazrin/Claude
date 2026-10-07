@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { LEVELS, copyPrompt, isOpen, levelFor, noteName, samePath, warningText, writePrompt } from './register'
+import { KEEP, LEVELS, copyPrompt, isOpen, kept, levelFor, sameRoot, warningText, writePrompt } from './register'
 
 test('warns once at each level the context reaches', () => {
   expect(LEVELS).toEqual([70, 85])
@@ -16,17 +16,19 @@ test('gets more urgent at the last level', () => {
   expect(warningText(88, 85)).toBe('Context 88% full · run /handoff now, then copy the prompt and /clear')
 })
 
-test('names one note file per project folder', () => {
-  expect(noteName('C:\\Users\\PC\\Desktop\\MODS TEST')).toBe('C-Users-PC-Desktop-MODS-TEST.md')
-  expect(noteName('/home/me/app')).toBe('home-me-app.md')
-  expect(noteName('/')).toBe('project.md')
+test('knows a project whichever way its folder is spelled', () => {
+  expect(sameRoot('C:\\Users\\PC\\app', 'c:/users/pc/app/')).toBe(true)
+  expect(sameRoot('C:\\Users\\PC\\app', 'C:\\Users\\PC\\other')).toBe(false)
 })
 
-test('knows the note whichever way its path is spelled', () => {
-  const path = 'C:/Users/PC/.claude/handoffs/app.md'
-  expect(samePath('C:\\Users\\PC\\.claude\\handoffs\\app.md', path)).toBe(true)
-  expect(samePath('c:/users/pc/.claude/handoffs/APP.md', path)).toBe(true)
-  expect(samePath('C:/Users/PC/.claude/handoffs/other.md', path)).toBe(false)
+test('keeps one note per project, newest first, at most KEEP', () => {
+  const note = (root: string, at: number) => ({ root, text: `${root} ${at}`, at })
+  let notes = [note('C:\\a', 1), note('C:\\b', 2)]
+  notes = kept(notes, note('c:/a', 3))
+  expect(notes.map(n => n.text)).toEqual(['c:/a 3', 'C:\\b 2'])
+  for (let i = 0; i < KEEP + 5; i++) notes = kept(notes, note(`C:\\p${i}`, 10 + i))
+  expect(notes.length).toBe(KEEP)
+  expect(notes[0]?.root).toBe(`C:\\p${KEEP + 4}`)
 })
 
 test('opens the saved note only when asked to', () => {
@@ -36,11 +38,16 @@ test('opens the saved note only when asked to', () => {
   expect(isOpen('please')).toBe(false)
 })
 
-test('asks for every section and keeps the reply short', () => {
-  const text = writePrompt('/home/me/.claude/handoffs/app.md', '/home/me/app', 'today')
-  for (const part of ['/home/me/.claude/handoffs/app.md', '# Handoff: /home/me/app', 'Written today', '## Goal', '## Done', '## In progress', '## Next steps', '## Key files', '## Decisions and gotchas', 'one short line']) {
+test('asks for every section through the tool, never a file', () => {
+  const text = writePrompt('C:\\work\\app', 'today')
+  for (const part of ['handoff_note tool', "Don't write it to a file", '# Handoff: C:\\work\\app', 'Written today', '## Goal', '## Done', '## In progress', '## Next steps', '## Key files', '## Decisions and gotchas', 'one short line']) {
     expect(text).toContain(part)
   }
-  expect(copyPrompt('/x/app.md')).toContain('/x/app.md')
-  expect(copyPrompt('/x/app.md')).toContain('wait for me to confirm')
+})
+
+test('the copied prompt carries the whole note', () => {
+  const prompt = copyPrompt('# Handoff\n## Next steps\n1. Ship it')
+  expect(prompt.startsWith("Here's a handoff note from my last session.")).toBe(true)
+  expect(prompt).toContain('wait for me to confirm')
+  expect(prompt.endsWith('# Handoff\n## Next steps\n1. Ship it')).toBe(true)
 })

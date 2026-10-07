@@ -10,7 +10,7 @@ Mods for the Claude Code terminal by Teddymazrin, published as the `teddymazrin-
 | [Control Panel](claude-code-mods/README.md#control-panel) | A status row (plan, model, effort, context, usage) and a panel to pick the model and effort, reload plugins or clear, and switch mods on and off |
 | [Action Steps](claude-code-mods/README.md#action-steps) | Numbered follow-up steps (run this, sign in, check that) in a side pane that opens by itself after a task |
 | [Guard Rails](claude-code-mods/README.md#guard-rails) | Asks before risky commands and edits (rm -rf, force pushes, Azure deletes, settings, .env and SSH files) and logs what it stopped |
-| [Context Handoff](claude-code-mods/README.md#context-handoff) | Warns as the context window fills, writes a handoff note for the project and shows it in a pane with Copy buttons, ready to paste after `/clear` |
+| [Context Handoff](claude-code-mods/README.md#context-handoff) | Warns as the context window fills, writes a handoff note for the project and shows it in a pane with a Copy prompt button, ready to paste after `/clear` |
 
 ## Install
 

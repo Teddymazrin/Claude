@@ -3,17 +3,22 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import type { Note } from '../types'
 
+const PLUGIN = 'context-handoff'
 const TITLE = 'Context Handoff'
 const PANE = 'context-handoff'
 const COMMAND = 'handoff'
+const TOOL = 'handoff_note'
+const TOOL_ID = `mcp__${PLUGIN}__${TOOL}`
 
 // Context percentages that each raise one warning per session.
 export const LEVELS = [70, 85] as const
 // A note older than this is not mentioned at session start.
 const FRESH_MS = 7 * 24 * 60 * 60 * 1000
+// Notes kept across sessions, one per project, newest first.
+export const KEEP = 20
 const SEND_DELAY_MS = 300
 
-// Palette: violet frame and title, amber for the path, slate buttons.
+// Palette: violet frame and title, amber for the project, slate buttons.
 const FRAME = '#6d5aa8'
 const VIOLET = '#b4a2f0'
 const AMBER = '#f6c177'
@@ -31,22 +36,22 @@ export const warningText = (percent: number, level: number) =>
     ? `Context ${percent}% full · run /${COMMAND} now, then copy the prompt and /clear`
     : `Context ${percent}% full · /${COMMAND} saves a handoff note before it fills`
 
-/** One file name per project, from its root folder: `C:\Users\me\app` → `C-Users-me-app.md`. */
-export const noteName = (root: string) =>
-  `${root.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'project'}.md`
-
-/** Whether two spellings name the same file: slashes either way, any case (Windows paths). */
-export const samePath = (a: string, b: string) => {
-  const plain = (p: string) => p.replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase()
+/** Whether two spellings name the same folder: slashes either way, any case (Windows paths). */
+export const sameRoot = (a: string, b: string) => {
+  const plain = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
   return plain(a) === plain(b)
 }
 
 /** `/handoff open` shows the saved note; anything else writes a fresh one. */
 export const isOpen = (args: string) => /^\s*(open|show|view)\s*$/i.test(args)
 
-export const writePrompt = (path: string, root: string, when: string) =>
+/** The kept notes with `fresh` in, replacing that project's last one, newest first. */
+export const kept = (notes: readonly Note[], fresh: Note) =>
+  [fresh, ...notes.filter(n => !sameRoot(n.root, fresh.root))].slice(0, KEEP)
+
+export const writePrompt = (root: string, when: string) =>
   [
-    `Write a handoff note for this session to ${path} (create the folder if needed, replace the file if it exists).`,
+    `Write a handoff note for this session and send it with the ${TOOL} tool (pass the whole note as \`note\`). Don't write it to a file.`,
     'It is for a fresh session with none of this conversation, so make it complete but short. Use these sections:',
     `# Handoff: ${root}`,
     `Written ${when}`,
@@ -57,25 +62,28 @@ export const writePrompt = (path: string, root: string, when: string) =>
     '## Key files: paths that matter, with a few words on each',
     '## Decisions and gotchas: choices made and why, things that failed, things to avoid',
     'Only write what is true of this session; leave a section out rather than guess.',
-    'The note opens in the Context Handoff pane once saved, so reply with one short line, not the note.',
+    'The note opens in the Context Handoff pane, so reply with one short line, not the note.',
   ].join('\n')
 
-/** What the person pastes into a fresh session to pick the work back up. */
-export const copyPrompt = (path: string) =>
-  `Read the handoff note at ${path}. Summarize where things stand in a few lines, say which next step you would start with, and wait for me to confirm before doing it.`
+/** What the person pastes into a fresh session: the note itself, with what to do with it. */
+export const copyPrompt = (text: string) =>
+  [
+    "Here's a handoff note from my last session. Sum up where things stand in a few lines, say which next step you would start with, and wait for me to confirm before doing it.",
+    '',
+    text,
+  ].join('\n')
 
-async function notePath($: EngineInterface) {
-  const home = ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/')
-  const root = await $.session.root()
-  return { root, path: `${home}/.claude/handoffs/${noteName(root)}` }
+async function storedNotes($: EngineInterface): Promise<Note[]> {
+  const value = await $.store.get('notes')
+  return Array.isArray(value) ? (value as Note[]) : []
 }
 
-// Reads the note into state; false when there is none.
-async function load($: EngineInterface, path: string) {
-  const text = await $.fs.read(path).catch(() => undefined)
-  if (text === undefined) return false
-  const saved: Note = { path, text: text.trim(), at: await $.clock.now() }
-  await update($, note, () => saved)
+// The kept note for this project into state; false when there is none.
+async function load($: EngineInterface) {
+  const root = await $.session.root()
+  const found = (await storedNotes($)).find(n => sameRoot(n.root, root))
+  if (!found) return false
+  await update($, note, () => found)
   return true
 }
 
@@ -86,12 +94,6 @@ async function show($: EngineInterface, isAsked: boolean) {
     .catch(() => undefined)
   const mine = (await $.ui.panes().catch(() => [])).find(p => p.id === PANE)
   await update($, band, () => !(opened?.isPlaced && mine?.isShown))
-}
-
-// A file just written or edited: when it is this project's note, show it.
-async function saved($: EngineInterface, file: string) {
-  const { path } = await notePath($)
-  if (samePath(file, path) && (await load($, path))) await show($, false)
 }
 
 // After the command has finished, so the turn isn't started from inside it. If the
@@ -106,14 +108,9 @@ function send($: EngineInterface, text: string) {
   })
 }
 
-async function copy($: EngineInterface, text: string, surface: Parameters<EngineInterface['ui']['copy']>[0]['surface'], what: string) {
-  const copied = await $.ui.copy({ text, surface })
-  $.ui.toast(copied.isCopied ? `${what} copied` : `Could not copy the ${what.toLowerCase()}`)
-}
-
 type Surface = Parameters<EngineInterface['ui']['resolve']>[0]
 
-// Copy prompt, Copy note, and Open (in the box only).
+// Copy prompt, and Open in the box above the prompt.
 function buttons($: EngineInterface, e: Surface, saved: Note, withOpen: boolean) {
   const { Box, Button } = $.ui.resolve(e)
   const button = (key: string, label: string, onPress: (press: { surface: Surface['surface'] }) => unknown) => (
@@ -123,8 +120,10 @@ function buttons($: EngineInterface, e: Surface, saved: Note, withOpen: boolean)
   )
   return (
     <Box flexDirection="row" flexWrap="wrap">
-      {button('copy-prompt', '⧉ Copy prompt', press => copy($, copyPrompt(saved.path), press.surface, 'Prompt'))}
-      {button('copy-note', '⧉ Copy note', press => copy($, saved.text, press.surface, 'Note'))}
+      {button('copy-prompt', '⧉ Copy prompt', async press => {
+        const copied = await $.ui.copy({ text: copyPrompt(saved.text), surface: press.surface })
+        $.ui.toast(copied.isCopied ? 'Prompt copied · /clear, then paste it' : 'Could not copy the prompt')
+      })}
       {withOpen && button('open-pane', '▸ Open', () => show($, true))}
     </Box>
   )
@@ -132,15 +131,24 @@ function buttons($: EngineInterface, e: Surface, saved: Note, withOpen: boolean)
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    await $.tool.register({
+      name: TOOL,
+      description: `Send the handoff note for this session to the user's ${TITLE} pane, where they copy it into a fresh session. Use only when asked to write a handoff note.`,
+      inputSchema: {
+        type: 'object',
+        properties: { note: { type: 'string', description: 'The whole handoff note, in Markdown, with its sections.' } },
+        required: ['note'],
+      },
+    })
     await $.command.register({
       name: COMMAND,
       description: 'Write a handoff note for this project (`open` shows the saved one)',
       argumentHint: '[open]',
     })
     // Mention a recent note, so /clear or a new session can carry on from it.
-    const { path } = await notePath($)
-    const saved = await $.fs.stat(path).catch(() => undefined)
-    if (saved?.kind === 'file' && (await $.clock.now()) - saved.mtimeMs < FRESH_MS) {
+    const root = await $.session.root()
+    const found = (await storedNotes($)).find(n => sameRoot(n.root, root))
+    if (found && (await $.clock.now()) - found.at < FRESH_MS) {
       $.ui.toast(`${TITLE}: a note is saved for this project · /${COMMAND} open to see it`, { timeoutMs: 8000 })
     }
     return next(e)
@@ -158,31 +166,29 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // When Claude saves the note, it opens in the pane.
-  on('tool.call', { tool: 'Write' }, async ($, e, next) => {
-    const ran = await next(e)
-    if (ran.deny === undefined && !ran.isError) await saved($, e.file_path).catch(() => {})
-    return ran
-  }).catch(($, e, next) => next(e))
-  on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
-    const ran = await next(e)
-    if (ran.deny === undefined && !ran.isError) await saved($, e.file_path).catch(() => {})
-    return ran
-  }).catch(($, e, next) => next(e))
-
-  on('command.run', { command: COMMAND }, async ($, e) => {
-    const { root, path } = await notePath($)
-    if (isOpen(e.args)) {
-      if (!(await load($, path))) return { text: `${TITLE}: no note for this project yet · /${COMMAND} writes one` }
-      await show($, true)
-      return { text: `${TITLE}: opened ${path}` }
-    }
-    const when = new Date(await $.clock.now()).toLocaleString()
-    send($, writePrompt(path, root, when))
-    return { text: `${TITLE}: writing the note to ${path} · it opens here once saved` }
+  // Claude hands the note over: kept for this project, and shown.
+  on('tool.call', { tool: TOOL_ID }, async ($, e) => {
+    const text = (e as unknown as { note?: unknown }).note
+    if (typeof text !== 'string' || !text.trim()) return { result: 'Handoff note not saved: `note` is empty.', isError: true }
+    const fresh: Note = { root: await $.session.root(), text: text.trim(), at: await $.clock.now() }
+    await $.store.set('notes', kept(await storedNotes($), fresh))
+    await update($, note, () => fresh)
+    await show($, false)
+    return { result: `Saved; shown in the ${TITLE} pane. Reply with one short line, not the note.` }
   })
 
-  // The note shown above the prompt when the side pane had no room.
+  on('command.run', { command: COMMAND }, async ($, e) => {
+    if (isOpen(e.args)) {
+      if (!(await load($))) return { text: `${TITLE}: no note for this project yet · /${COMMAND} writes one` }
+      await show($, true)
+      return { text: `${TITLE}: opened the saved note` }
+    }
+    const when = new Date(await $.clock.now()).toLocaleString()
+    send($, writePrompt(await $.session.root(), when))
+    return { text: `${TITLE}: writing the note · it opens here once ready` }
+  })
+
+  // The note's buttons above the prompt when the side pane had no room.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     const saved = await read($, note)
@@ -194,8 +200,8 @@ export const register: Register = on => {
           <Box key="band-header" flexDirection="row" justifyContent="space-between">
             <Text>
               <Text color={VIOLET}>◈ </Text>
-              <Text bold color={VIOLET}>Handoff note saved</Text>
-              <Text dimColor>{` · ${saved.path}`}</Text>
+              <Text bold color={VIOLET}>Handoff note ready</Text>
+              <Text dimColor>{' · copy the prompt, /clear, then paste'}</Text>
             </Text>
             <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => false)} />
           </Box>
@@ -220,7 +226,7 @@ export const register: Register = on => {
     )
     if (!saved) return frame(<Text dimColor>{`No note yet. /${COMMAND} writes one for this project.`}</Text>)
     return frame([
-      <Text key="path" color={AMBER} wrap="truncate-middle">{saved.path}</Text>,
+      <Text key="root" color={AMBER} wrap="truncate-middle">{saved.root}</Text>,
       <Box key="actions" marginTop={1} marginBottom={1}>{buttons($, e, saved, false)}</Box>,
       <Text key="hint" dimColor>{'Copy the prompt, run /clear, then paste it to carry on.'}</Text>,
       <Box key="note" marginTop={1} flexDirection="column">
