@@ -451,7 +451,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" alignItems="flex-end">
         {!isEmptyEngine && below}
-        <Box key="control-panel-chip" backgroundColor={SLATE} paddingX={1} hover={{ backgroundColor: ORANGE }}>
+        <Box key="control-panel-chip" backgroundColor={ORANGE} paddingX={1}>
           <Button key="open-control-panel" plain label={label} hover={{ bold: true }} onPress={() => openPane($)} />
         </Box>
       </Box>
