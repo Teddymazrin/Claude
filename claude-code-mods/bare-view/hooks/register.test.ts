@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bar, countCall, elapsed, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyLine, toolLabel } from './register'
+import { PEEK_MAX, addCall, bar, callDetail, carryCalls, countCall, elapsed, failCall, peekLines, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyLine, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -99,4 +99,45 @@ test('formats the timer, fits text and blends colours', () => {
   expect(fit('Check how the page gets live weather', 10)).toBe('Check how…')
   expect(mix('#000000', '#ffffff', 0.5)).toBe('#808080')
   expect(mix('#ff9a4d', '#ff4f8b', 0)).toBe('#ff9a4d')
+})
+
+test('describes a call by its command, file or query', () => {
+  expect(callDetail('Bash', { command: 'git   status\n--short' })).toBe('git status --short')
+  expect(callDetail('Read', { file_path: '/repo/README.md' })).toBe('/repo/README.md')
+  expect(callDetail('WebSearch', { query: 'rbac roles' })).toBe('rbac roles')
+  expect(callDetail('mcp__x__find', { tool: 'mcp__x__find', name: 'teddy' })).toBe('teddy')
+  expect(callDetail('Bash', { command: 'x'.repeat(100) }).length).toBe(70)
+})
+
+test('files each call under the step that is open', () => {
+  const call = (id: string) => ({ id, tool: 'Bash', detail: id })
+  let list = addCall({ goal: 'g', steps: [] }, call('early'))
+  expect(list.early?.map(c => c.id)).toEqual(['early'])
+  list = { ...list, steps: carryCalls(list, [{ text: 'A', status: 'active' }, { text: 'B', status: 'todo' }]) }
+  expect(list.steps[0]?.calls?.map(c => c.id)).toEqual(['early'])
+  list = addCall(list, call('a1'))
+  list = { ...list, steps: [{ ...list.steps[0]!, status: 'done' }, { ...list.steps[1]!, status: 'active' }] }
+  list = addCall(list, call('b1'))
+  expect(list.steps[0]?.calls?.map(c => c.id)).toEqual(['early', 'a1'])
+  expect(list.steps[1]?.calls?.map(c => c.id)).toEqual(['b1'])
+  list = failCall(list, 'b1')
+  expect(list.steps[1]?.calls?.[0]?.isError).toBe(true)
+})
+
+test('a new plan keeps calls by step text, then by place', () => {
+  const calls = [{ id: '1', tool: 'Read', detail: 'x' }]
+  const before = { goal: 'g', steps: [{ text: 'Read files', status: 'done' as const, calls }, { text: 'Edit', status: 'active' as const }] }
+  const moved = carryCalls(before, [{ text: 'Plan', status: 'done' }, { text: 'Read files', status: 'done' }, { text: 'Edit', status: 'active' }])
+  expect(moved[1]?.calls).toEqual(calls)
+  expect(moved[0]?.calls).toBeUndefined()
+  const reworded = carryCalls(before, [{ text: 'Read the files', status: 'done' }, { text: 'Edit', status: 'active' }])
+  expect(reworded[0]?.calls).toEqual(calls)
+})
+
+test('a peek lists the newest calls and counts the rest', () => {
+  const calls = Array.from({ length: PEEK_MAX + 3 }, (_, i) => ({ id: String(i), tool: 'Bash', detail: String(i) }))
+  const { shown, hidden } = peekLines(calls)
+  expect(shown.length).toBe(PEEK_MAX)
+  expect(hidden).toBe(3)
+  expect(shown[0]?.id).toBe('3')
 })

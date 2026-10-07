@@ -4,7 +4,7 @@ Five mods for Claude Code. They work in the terminal and in the desktop app's Co
 
 | Mod | What it does |
 | --- | --- |
-| [Bare View](#bare-view) | A live task checklist above the prompt, with a tally of every tool call; hides the tool-call noise |
+| [Bare View](#bare-view) | A live task checklist above the prompt, with a tally of every tool call and a peek at each step's calls; hides the tool-call noise |
 | [Control Panel](#control-panel) | A status row (plan, model, effort, context, usage) and a panel to pick the model and effort, reload or clear, and switch mods on and off |
 | [Action Steps](#action-steps) | Follow-up steps (run this, sign in, check that) in a side pane you can tick off |
 | [Guard Rails](#guard-rails) | Asks before risky commands and edits, and logs what it stopped |
@@ -35,6 +35,7 @@ Run `/reload-plugins` to load them, or start a new session.
 A live task checklist above the prompt: the goal, a progress bar, each step and a timer. Tool calls and in-progress text are hidden, so only the checklist and the final answer show.
 
 - **Tally:** a line counts the tool calls behind each prompt, naming each built-in tool and each MCP server, with the tool running right now on the right: `⚙ 4 tool calls · Built-in 3: Bash 2, Read 1 · MCP 1: microsoft-learn 1   ▶ Bash`
+- **Peek at a step:** a step that has made tool calls shows a count at the end of its row (`▸3`). Click the step to list its calls under it, each with what it did (the command, file or search) and a red `✗` for any that failed. Click again to hide them. The newest 8 show, with a count of the earlier ones
 - **`/checklist`:** switches the full view back on, and off again
 
 ## Control Panel

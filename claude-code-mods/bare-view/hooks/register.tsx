@@ -1,14 +1,17 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Checklist, Step, StepStatus, Tally } from '../types'
+import type { Call, Checklist, Step, StepStatus, Tally } from '../types'
 
 const PLUGIN = 'bare-view'
 const TOOL = 'checklist'
 const TOOL_ID = `mcp__${PLUGIN}__${TOOL}`
+// The most calls a peek lists under a step: the newest, with a count of the rest.
+export const PEEK_MAX = 8
 
 const checklist = atom({ plugin: 'bare-view', key: 'checklist' } as const, null)
 const showTools = atom({ plugin: 'bare-view', key: 'showTools' } as const, false)
+const peek = atom({ plugin: 'bare-view', key: 'peek' } as const, null)
 
 // Palette, after the reference: pink frame, orange-to-pink progress, green done, violet working.
 const FRAME = '#e0457b'
@@ -110,6 +113,82 @@ export const tallyLine = (tally: Tally | undefined) => {
   return parts.join(' · ')
 }
 
+// The input field that says what a call did, by tool; any other tool shows its first short string.
+const DETAIL_FIELDS: Record<string, string> = {
+  Bash: 'command',
+  PowerShell: 'command',
+  Read: 'file_path',
+  Write: 'file_path',
+  Edit: 'file_path',
+  MultiEdit: 'file_path',
+  NotebookEdit: 'notebook_path',
+  Grep: 'pattern',
+  Glob: 'pattern',
+  WebFetch: 'url',
+  WebSearch: 'query',
+  Agent: 'description',
+  Skill: 'skill',
+  ToolSearch: 'query',
+}
+
+/** A few words on what a call did: the command, the file, the pattern, the query. */
+export const callDetail = (tool: string, input: Record<string, unknown>, max = 70) => {
+  const field = DETAIL_FIELDS[tool]
+  const value = field
+    ? input[field]
+    : Object.entries(input).find(([k, v]) => k !== 'tool' && k !== 'tool_use_id' && typeof v === 'string' && v.trim() && v.length <= 200)?.[1]
+  const line = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line
+}
+
+/** Where a call belongs: the active step, else the first open one, else the last; before any plan, `early`. */
+export const addCall = (list: Checklist, call: Call): Checklist => {
+  if (list.steps.length === 0) return { ...list, early: [...(list.early ?? []), call] }
+  let at = list.steps.findIndex(s => s.status === 'active')
+  if (at < 0) at = list.steps.findIndex(s => s.status !== 'done')
+  if (at < 0) at = list.steps.length - 1
+  return { ...list, steps: list.steps.map((s, i) => (i === at ? { ...s, calls: [...(s.calls ?? []), call] } : s)) }
+}
+
+/** Marks the call with `id` as failed, wherever it sits. */
+export const failCall = (list: Checklist, id: string): Checklist => {
+  const mark = (calls?: Call[]) => calls?.map(c => (c.id === id ? { ...c, isError: true } : c))
+  return { ...list, early: mark(list.early), steps: list.steps.map(s => (s.calls ? { ...s, calls: mark(s.calls) } : s)) }
+}
+
+/**
+ * A new plan keeps the calls already made: each step takes the calls of the old
+ * step with the same text, or else the one in the same place; calls made before
+ * the first plan join its first step.
+ */
+export const carryCalls = (before: Checklist | null, steps: Step[]): Step[] => {
+  const old = before?.steps ?? []
+  const taken = new Set<number>()
+  const out = steps.map(step => {
+    const same = old.findIndex((s, i) => !taken.has(i) && s.text === step.text)
+    if (same >= 0) {
+      taken.add(same)
+      return old[same]!.calls ? { ...step, calls: old[same]!.calls } : step
+    }
+    return step
+  })
+  const placed = out.map((step, i) => {
+    if (step.calls || taken.has(i) || !old[i]?.calls) return step
+    taken.add(i)
+    return { ...step, calls: old[i]!.calls }
+  })
+  const early = before?.early ?? []
+  if (early.length === 0 || placed.length === 0) return placed
+  return placed.map((s, i) => (i === 0 ? { ...s, calls: [...early, ...(s.calls ?? [])] } : s))
+}
+
+/** The lines a peek lists: the newest PEEK_MAX calls, and how many older ones are left out. */
+export const peekLines = (calls: readonly Call[] | undefined) => {
+  const all = calls ?? []
+  const shown = all.slice(-PEEK_MAX)
+  return { shown, hidden: all.length - shown.length }
+}
+
 const firstLine = (text: string, max = 80) => {
   const line = text.trim().split('\n')[0] ?? ''
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
@@ -145,6 +224,9 @@ export const statusWord = (steps: readonly Step[], index: number) => {
 // Messages (by id) drawn while a checklist was open stay hidden after it closes.
 // A module value: a render hook may not write state, and a reload only shows them again.
 const muted = new Set<string>()
+
+// Ids for calls that arrive without a tool_use_id.
+let callNo = 0
 
 // Redraws the band once a second while a checklist is open, for the timer and
 // the working shimmer.
@@ -215,6 +297,7 @@ export const register: Register = on => {
     if (!goal || goal.startsWith('/')) return next(e)
     const startedAt = await $.clock.now()
     await update($, checklist, () => ({ goal, steps: [], startedAt }))
+    await update($, peek, () => null)
     return next({ ...e, context: [...(e.context ?? []), REMINDER] })
   }).catch(($, e, next) => next(e))
 
@@ -227,21 +310,31 @@ export const register: Register = on => {
     const before = await read($, checklist)
     const startedAt = before?.startedAt ?? now
     const next: Checklist = { ...parsed, startedAt, ...(isInProgress(parsed) ? {} : { finishedAt: now }) }
-    // Keep the tally counted so far; a concurrent count may land meanwhile, so read it inside the update.
-    await update($, checklist, cur => ({ ...next, ...(cur?.tally ? { tally: cur.tally } : {}) }))
+    // Keep the tally and the calls so far; a concurrent count may land meanwhile, so read them inside the update.
+    await update($, checklist, cur => ({ ...next, steps: carryCalls(cur, next.steps), ...(cur?.tally ? { tally: cur.tally } : {}) }))
     if (isInProgress(next)) void tick($).catch(() => {})
     return { result: 'Checklist updated.' }
   })
 
   // Tally every other tool call (built-in, MCP, subagents') since the prompt,
-  // naming the one running until it finishes.
+  // naming the one running until it finishes, and file it under the open step for a peek.
   on('tool.call', async ($, e, next) => {
     if (e.tool === TOOL_ID) return next(e)
-    await update($, checklist, cur => (cur === null ? cur : { ...cur, tally: countCall(cur.tally, e.tool) })).catch(() => {})
+    const call: Call = {
+      id: e.tool_use_id ?? `call-${++callNo}`,
+      tool: toolLabel(e.tool),
+      detail: callDetail(e.tool, e as unknown as Record<string, unknown>),
+    }
+    await update($, checklist, cur => (cur === null ? cur : { ...addCall(cur, call), tally: countCall(cur.tally, e.tool) })).catch(() => {})
+    let failed = true
     try {
-      return await next(e)
+      const ran = await next(e)
+      failed = ran.deny !== undefined || ran.isError === true
+      return ran
     } finally {
-      await update($, checklist, cur => (cur === null ? cur : { ...cur, tally: finishCall(cur.tally, e.tool) })).catch(() => {})
+      await update($, checklist, cur =>
+        cur === null ? cur : { ...(failed ? failCall(cur, call.id) : cur), tally: finishCall(cur.tally, e.tool) },
+      ).catch(() => {})
     }
   })
 
@@ -285,7 +378,8 @@ export const register: Register = on => {
     const list = await read($, checklist)
     if (e.props.hasSurvey || list === null) return below
 
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const peeked = await read($, peek)
     const now = await $.clock.now()
     const { done, total, percent } = progress(list)
     const isFinished = total > 0 && done === total
@@ -307,6 +401,7 @@ export const register: Register = on => {
     const textW = Math.max(16, Math.min(44, Math.floor(inner * 0.4)))
     const miniW = 12
     const statusW = 9
+    const countW = 5
 
     // Goal words shade orange to pink to blue, as in the reference.
     const words = list.goal.split(/(\s+)/)
@@ -378,20 +473,53 @@ export const register: Register = on => {
           {list.steps.map((step, i) => {
             const word = statusWord(list.steps, i)
             const isActive = step.status === 'active'
+            const calls = step.calls ?? []
+            const failed = calls.filter(c => c.isError).length
+            const isPeeked = peeked === i && calls.length > 0
+            const { shown, hidden } = peekLines(calls)
             return (
-              <Box flexDirection="row">
-                <Text color={step.status === 'done' ? GREEN_TO : isActive ? PINK : undefined} dimColor={step.status === 'todo'}>
-                  {step.status === 'done' ? '✓ ' : isActive ? '● ' : '○ '}
-                </Text>
-                <Text bold={isActive} dimColor={!isActive}>
-                  {fit(step.text, textW)}
-                </Text>
-                <Text> </Text>
-                <Text>{mini(step, i)}</Text>
-                <Text>  </Text>
-                <Text bold={isActive} color={isActive ? PINK : undefined} dimColor={!isActive}>
-                  {fit(word, statusW)}
-                </Text>
+              <Box key={`step-${i}`} flexDirection="column">
+                <Box flexDirection="row">
+                  <Text color={step.status === 'done' ? GREEN_TO : isActive ? PINK : undefined} dimColor={step.status === 'todo'}>
+                    {step.status === 'done' ? '✓ ' : isActive ? '● ' : '○ '}
+                  </Text>
+                  {calls.length > 0 ? (
+                    // A step with calls is a button: press it to peek at them.
+                    <Button
+                      key={`peek-${i}`}
+                      plain
+                      label={fit(step.text, textW)}
+                      dimColor={!isActive}
+                      hover={{ bold: true }}
+                      onPress={() => update($, peek, v => (v === i ? null : i))}
+                    />
+                  ) : (
+                    <Text bold={isActive} dimColor={!isActive}>
+                      {fit(step.text, textW)}
+                    </Text>
+                  )}
+                  <Text> </Text>
+                  <Text>{mini(step, i)}</Text>
+                  <Text>  </Text>
+                  <Text bold={isActive} color={isActive ? PINK : undefined} dimColor={!isActive}>
+                    {fit(word, statusW)}
+                  </Text>
+                  <Text color={failed > 0 ? PINK : undefined} dimColor={failed === 0}>
+                    {fit(calls.length > 0 ? `${isPeeked ? '▾' : '▸'}${calls.length}` : '', countW)}
+                  </Text>
+                </Box>
+                {isPeeked ? (
+                  <Box key={`calls-${i}`} flexDirection="column" marginLeft={4}>
+                    {hidden > 0 ? <Text dimColor>{`… ${hidden} earlier`}</Text> : null}
+                    {shown.map(c => (
+                      <Text key={c.id}>
+                        <Text color={c.isError ? PINK : BLUE}>{c.isError ? '✗ ' : '› '}</Text>
+                        <Text color={c.isError ? PINK : undefined}>{c.tool}</Text>
+                        <Text dimColor>{fit(c.detail ? `  ${c.detail}` : '', Math.max(0, inner - 6 - c.tool.length)).trimEnd()}</Text>
+                      </Text>
+                    ))}
+                  </Box>
+                ) : null}
               </Box>
             )
           })}
