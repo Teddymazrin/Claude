@@ -1,6 +1,6 @@
 {
   "name": "bare-view",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Live task checklist. Shows a live checklist above the prompt (working on, progress, what's left) and hides the tool-call noise in the transcript",
   "author": {
     "name": "Teddymazrin"

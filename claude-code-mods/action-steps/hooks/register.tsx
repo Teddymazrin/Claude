@@ -29,7 +29,7 @@ The user keeps an Action Steps pane beside the chat for what they must do themse
 - Then keep the how-to out of your final answer: say what you did and that the steps are in the Action Steps pane.
 - Skip it for questions, explanations, or tasks that leave nothing for the user to do.`
 
-export const REMINDER = `[Action Steps] If this task leaves the user with things to do themselves (run, configure, verify), send them to \`${TOOL_ID}\` before your final answer (load it with ToolSearch "select:${TOOL_ID}" if needed) and keep the how-to out of the chat. Skip it when there is nothing for them to do.`
+export const REMINDER = `[Action Steps] User to-dos go in the pane (ToolSearch "select:${TOOL_ID}" if not loaded).`
 
 export const parseSet = (input: Record<string, unknown>, id: string, at: number): StepSet | string => {
   const title = typeof input.title === 'string' ? input.title.trim() : ''

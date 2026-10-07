@@ -28,11 +28,12 @@ const TRACK = '#2a2433'
 const INSTRUCTIONS = `# Bare View progress checklist
 The user does not see your tool calls or the text you write while a checklist is in progress; they see a checklist drawn from the \`${TOOL_ID}\` tool.
 - At the start of every request that needs any work (reading, searching, editing, running), call \`${TOOL_ID}\` first with a short \`goal\` and 2-7 concrete \`steps\`, the first one \`active\`, the rest \`todo\`.
-- Call it again each time a step finishes: mark it \`done\` and the next one \`active\`. Add or reword steps if the plan changes.
-- Before your final answer, call it with every step \`done\`. Only text after that call is shown, so the final answer must carry the outcome.
+- Call it again only when the plan changes; do not send an update after every step.
+- Before your final answer, call it with every step \`done\`. Only text after that call is shown.
+- Final answer: lead with the result in 1-3 sentences. Add details only if the user must act on them or something surprising happened. Don't recap the steps; the checklist already showed them.
 - Skip it for a pure question you can answer without tools.`
 
-export const REMINDER = `[Bare View] The user follows your progress through the \`${TOOL_ID}\` tool, not your tool calls, and does not see text you write while steps are open. If its schema is not loaded yet, load it first with ToolSearch (query "select:${TOOL_ID}"). For a request that needs any tool, call it before other work with a short \`goal\` and 2-7 \`steps\` (the first \`active\`, the rest \`todo\`), again each time a step finishes, and once with every step \`done\` before your final answer, which is shown and must carry the outcome. Skip it for a question you answer without tools.`
+export const REMINDER = `[Bare View] Use the checklist (ToolSearch "select:${TOOL_ID}" if not loaded); final answer = short outcome.`
 
 const STATUSES: readonly StepStatus[] = ['done', 'active', 'todo']
 
@@ -261,7 +262,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: TOOL,
       description:
-        'Report your plan and progress to the user as a checklist. Call it at the start of a task and after each step completes. Send the whole list every time.',
+        'Report your plan and progress to the user as a checklist. Call it at the start of a task, when the plan changes, and once at the end. Send the whole list every time.',
       inputSchema: {
         type: 'object',
         properties: {
