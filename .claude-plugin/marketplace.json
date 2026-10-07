@@ -24,6 +24,11 @@
       "name": "guard-rails",
       "source": "./claude-code-mods/guard-rails",
       "description": "Asks before risky commands and edits; logs what it stopped"
+    },
+    {
+      "name": "context-handoff",
+      "source": "./claude-code-mods/context-handoff",
+      "description": "Warns as context fills; writes and resumes a handoff note per project"
     }
   ]
 }

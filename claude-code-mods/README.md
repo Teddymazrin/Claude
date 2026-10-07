@@ -1,6 +1,6 @@
 # Claude Code mods
 
-Four mods for the Claude Code terminal.
+Five mods for the Claude Code terminal.
 
 ## Before you install: add the marketplace (one time)
 
@@ -38,6 +38,7 @@ Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
 - **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`)
 - **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
+- **Run:** **↻ Reload plugins** (key `r`) runs `/reload-plugins`; **⌫ Clear** (key `c`) runs `/clear` after asking you to confirm
 - **Mods:** switch each of your installed mods on or off
 
 ```
@@ -84,6 +85,21 @@ Commands are checked in both Bash and PowerShell. A blocked call tells Claude no
 
 ```
 /plugin install guard-rails@teddymazrin-mods
+```
+
+## Context Handoff
+
+Keeps a long session from losing its thread when the context window fills.
+
+- **Warnings:** a toast at 70% context full, and a more urgent one at 85%. Each shows once, and again after `/clear` or a compact brings the context back down
+- **`/handoff`:** Claude writes a handoff note for this project: the goal, what's done, what's in progress, next steps, key files, and decisions and gotchas. Notes are saved in `~/.claude/handoffs/`, one per project folder, and a new note replaces the old one
+- **`/handoff-resume`:** Claude reads the note, sums up where things stand and waits for you to confirm the next step
+- **At session start:** when a note from the last 7 days exists for the project, a toast reminds you it's there
+
+The usual flow is `/handoff`, then `/clear`, then `/handoff-resume`.
+
+```
+/plugin install context-handoff@teddymazrin-mods
 ```
 
 ## Updating the mods

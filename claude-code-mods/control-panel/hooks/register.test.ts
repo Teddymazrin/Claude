@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EFFORTS, MODELS, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { EFFORTS, MODELS, QUICK, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -114,6 +114,13 @@ test('runs one reload after a burst of switches, with the last one', () => {
   for (const timer of timers) if (!timer.isCancelled) timer.fn()
   expect(fired).toEqual(['on'])
   schedule(after, () => fired.push('again'))
-  timers[timers.length - 1].fn()
+  timers[timers.length - 1]?.fn()
   expect(fired).toEqual(['on', 'again'])
+})
+
+test('quick commands use their own keys and only /clear asks first', () => {
+  const taken = [...MODELS.map(m => m.hotkey), ...EFFORTS.map(f => f.hotkey)]
+  for (const q of QUICK) expect(taken.includes(q.hotkey)).toBe(false)
+  expect(QUICK.map(q => q.command)).toEqual(['reload-plugins', 'clear'])
+  expect(QUICK.filter(q => q.confirm).map(q => q.command)).toEqual(['clear'])
 })

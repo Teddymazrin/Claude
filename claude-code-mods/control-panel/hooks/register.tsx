@@ -323,6 +323,21 @@ async function switchMod($: EngineInterface, mod: Mod) {
   $.ui.toast(`${titled(mod.name)} ${word}`)
 }
 
+/** The quick commands row: a button per slash command, run as if typed. */
+export const QUICK: ReadonlyArray<{ command: string; label: string; hotkey: string; confirm?: string }> = [
+  { command: RELOAD, label: '↻ Reload plugins', hotkey: 'r' },
+  { command: 'clear', label: '⌫ Clear', hotkey: 'c', confirm: 'Clear the conversation and start fresh?' },
+]
+
+// Runs once the session is idle; /clear asks first, since it can't be undone.
+async function runQuick($: EngineInterface, quick: (typeof QUICK)[number]) {
+  if (quick.confirm) {
+    const answer = await $.ui.ask(quick.confirm, { options: ['Clear', 'Cancel'], header: 'Clear' }).catch(() => 'Cancel')
+    if (answer !== 'Clear') return
+  }
+  await $.command.run({ command: quick.command }).catch(() => $.ui.toast(`Couldn't run /${quick.command} · type it at the prompt`))
+}
+
 async function pick($: EngineInterface, patch: Partial<Choice>) {
   const next = { ...(await read($, choice)), ...patch }
   await update($, choice, () => next)
@@ -492,6 +507,10 @@ export const register: Register = on => {
         {pickerRow(
           'EFFORT',
           EFFORTS.map(f => option(`effort-${f.hotkey}`, f.label, effort === f.id, MAUVE, f.hotkey, () => pick($, { effort: f.id }))),
+        )}
+        {pickerRow(
+          'RUN',
+          QUICK.map(q => option(`quick-${q.command}`, q.label, false, GOLD, q.hotkey, () => runQuick($, q))),
         )}
 
         {section('Mods')}

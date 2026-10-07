@@ -1,0 +1,11 @@
+{
+  "name": "context-handoff",
+  "version": "1.0.0",
+  "description": "Context Handoff. Warns as the context window fills, writes a handoff note for the project with /handoff, and picks it back up after /clear or in a new session with /handoff-resume",
+  "author": {
+    "name": "Teddymazrin"
+  },
+  "homepage": "https://github.com/Teddymazrin/Claude/tree/main/claude-code-mods",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
