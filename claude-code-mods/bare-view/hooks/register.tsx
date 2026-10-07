@@ -82,7 +82,8 @@ export const countCall = (tally: Tally | undefined, tool: string): Tally => {
   const server = mcpServer(tool)
   const mcp = { ...(tally?.mcp ?? {}) }
   const builtIn = { ...(tally?.builtIn ?? {}) }
-  if (server !== undefined) mcp[server] = (mcp[server] ?? 0) + 1
+  // MCP calls are counted per tool, as "server › tool", and grouped by server when shown.
+  if (server !== undefined) mcp[toolLabel(tool)] = (mcp[toolLabel(tool)] ?? 0) + 1
   else builtIn[tool] = (builtIn[tool] ?? 0) + 1
   return { total: (tally?.total ?? 0) + 1, mcp, builtIn, running: toolLabel(tool) }
 }
@@ -90,6 +91,22 @@ export const countCall = (tally: Tally | undefined, tool: string): Tally => {
 /** Clears the running tool once it finishes, unless another call has started since. */
 export const finishCall = (tally: Tally | undefined, tool: string): Tally | undefined =>
   tally && tally.running === toolLabel(tool) ? { ...tally, running: undefined } : tally
+
+/** "Gmail 2 (read, search), ide 1 (getDiagnostics)": each server, its calls, and the tools it ran. */
+export const byServer = (counts: Record<string, number>) => {
+  const servers = new Map<string, { n: number; tools: string[] }>()
+  for (const [key, n] of Object.entries(counts)) {
+    const [server, tool] = key.split(' › ')
+    const entry = servers.get(server!) ?? { n: 0, tools: [] }
+    entry.n += n
+    if (tool) entry.tools.push(tool)
+    servers.set(server!, entry)
+  }
+  return [...servers.entries()]
+    .sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]))
+    .map(([server, { n, tools }]) => (tools.length ? `${server} ${n} (${tools.sort().join(', ')})` : `${server} ${n}`))
+    .join(', ')
+}
 
 const byCount = (counts: Record<string, number>) =>
   Object.entries(counts)
@@ -109,7 +126,7 @@ export const tallyLine = (tally: Tally | undefined) => {
     const named = tally?.builtIn && Object.keys(tally.builtIn).length > 0
     parts.push(named ? `Built-in ${builtInTotal}: ${byCount(tally!.builtIn!)}` : `${builtInTotal} built-in`)
   }
-  if (mcpTotal > 0) parts.push(`MCP ${mcpTotal}: ${byCount(mcp)}`)
+  if (mcpTotal > 0) parts.push(`MCP ${mcpTotal}: ${byServer(mcp)}`)
   return parts.join(' · ')
 }
 
@@ -150,11 +167,24 @@ export const addCall = (list: Checklist, call: Call): Checklist => {
   return { ...list, steps: list.steps.map((s, i) => (i === at ? { ...s, calls: [...(s.calls ?? []), call] } : s)) }
 }
 
-/** Marks the call with `id` as failed, wherever it sits. */
-export const failCall = (list: Checklist, id: string): Checklist => {
-  const mark = (calls?: Call[]) => calls?.map(c => (c.id === id ? { ...c, isError: true } : c))
+/** Records how the call with `id` ended (failed or not, how long it took, what it returned), wherever it sits. */
+export const endCall = (list: Checklist, id: string, end: Pick<Call, 'isError' | 'ms' | 'preview'>): Checklist => {
+  const mark = (calls?: Call[]) => calls?.map(c => (c.id === id ? { ...c, ...end } : c))
   return { ...list, early: mark(list.early), steps: list.steps.map(s => (s.calls ? { ...s, calls: mark(s.calls) } : s)) }
 }
+
+/** Marks the call with `id` as failed, wherever it sits. */
+export const failCall = (list: Checklist, id: string): Checklist => endCall(list, id, { isError: true })
+
+/** The first line of what a call returned, for its peek: the reason it was refused, the text the model read, or a plain string result. */
+export const resultPreview = (ran: { text?: unknown; result?: unknown; deny?: unknown }, max = 90) => {
+  const raw = typeof ran.deny === 'string' ? ran.deny : typeof ran.text === 'string' ? ran.text : typeof ran.result === 'string' ? ran.result : ''
+  const line = raw.split(/\r?\n/).map(l => l.trim()).find(l => l.length > 0) ?? ''
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line
+}
+
+/** "850ms", "2.4s", "1m 05s". */
+export const duration = (ms: number) => (ms < 1000 ? `${Math.max(0, Math.round(ms))}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : elapsed(ms))
 
 /**
  * A new plan keeps the calls already made: each step takes the calls of the old
@@ -326,14 +356,16 @@ export const register: Register = on => {
       detail: callDetail(e.tool, e as unknown as Record<string, unknown>),
     }
     await update($, checklist, cur => (cur === null ? cur : { ...addCall(cur, call), tally: countCall(cur.tally, e.tool) })).catch(() => {})
-    let failed = true
+    const startedAt = await $.clock.now()
+    let end: Pick<Call, 'isError' | 'ms' | 'preview'> = { isError: true }
     try {
       const ran = await next(e)
-      failed = ran.deny !== undefined || ran.isError === true
+      end = { isError: ran.deny !== undefined || ran.isError === true, preview: resultPreview(ran as never) }
       return ran
     } finally {
+      const ms = (await $.clock.now().catch(() => startedAt)) - startedAt
       await update($, checklist, cur =>
-        cur === null ? cur : { ...(failed ? failCall(cur, call.id) : cur), tally: finishCall(cur.tally, e.tool) },
+        cur === null ? cur : { ...endCall(cur, call.id, { ...end, ms }), tally: finishCall(cur.tally, e.tool) },
       ).catch(() => {})
     }
   })
@@ -511,13 +543,26 @@ export const register: Register = on => {
                 {isPeeked ? (
                   <Box key={`calls-${i}`} flexDirection="column" marginLeft={4}>
                     {hidden > 0 ? <Text dimColor>{`… ${hidden} earlier`}</Text> : null}
-                    {shown.map(c => (
-                      <Text key={c.id}>
-                        <Text color={c.isError ? PINK : BLUE}>{c.isError ? '✗ ' : '› '}</Text>
-                        <Text color={c.isError ? PINK : undefined}>{c.tool}</Text>
-                        <Text dimColor>{fit(c.detail ? `  ${c.detail}` : '', Math.max(0, inner - 6 - c.tool.length)).trimEnd()}</Text>
-                      </Text>
-                    ))}
+                    {shown.map(c => {
+                      const took = c.ms === undefined ? '…' : duration(c.ms)
+                      return (
+                        <Box key={c.id} flexDirection="column">
+                          <Box flexDirection="row" justifyContent="space-between">
+                            <Text>
+                              <Text color={c.isError ? PINK : BLUE}>{c.isError ? '✗ ' : '› '}</Text>
+                              <Text color={c.isError ? PINK : undefined}>{c.tool}</Text>
+                              <Text dimColor>{fit(c.detail ? `  ${c.detail}` : '', Math.max(0, inner - 8 - c.tool.length - took.length)).trimEnd()}</Text>
+                            </Text>
+                            <Text dimColor>{took}</Text>
+                          </Box>
+                          {c.preview ? (
+                            <Text color={c.isError ? PINK : undefined} dimColor={!c.isError}>
+                              {`    ↳ ${fit(c.preview, Math.max(0, inner - 10)).trimEnd()}`}
+                            </Text>
+                          ) : null}
+                        </Box>
+                      )
+                    })}
                   </Box>
                 ) : null}
               </Box>

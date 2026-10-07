@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, addCall, bar, callDetail, carryCalls, countCall, elapsed, failCall, peekLines, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyLine, toolLabel } from './register'
+import { PEEK_MAX, addCall, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyLine, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -14,8 +14,14 @@ test('tallies every tool by name, MCP ones by server, and the one running', () =
   t = countCall(t, 'mcp__claude_ai_Gmail__search')
   t = countCall(t, 'mcp__claude_ai_Gmail__read')
   t = countCall(t, 'mcp__ide__getDiagnostics')
-  expect(t).toEqual({ total: 6, mcp: { Gmail: 2, ide: 1 }, builtIn: { Bash: 2, Read: 1 }, running: 'ide › getDiagnostics' })
-  expect(tallyLine(t)).toBe('6 tool calls · Built-in 3: Bash 2, Read 1 · MCP 3: Gmail 2, ide 1')
+  expect(t).toEqual({
+    total: 6,
+    mcp: { 'Gmail › search': 1, 'Gmail › read': 1, 'ide › getDiagnostics': 1 },
+    builtIn: { Bash: 2, Read: 1 },
+    running: 'ide › getDiagnostics',
+  })
+  // Each MCP server with its count and the tools it ran.
+  expect(tallyLine(t)).toBe('6 tool calls · Built-in 3: Bash 2, Read 1 · MCP 3: Gmail 2 (read, search), ide 1 (getDiagnostics)')
   // The running tool clears when it finishes, but not when an earlier call finishes after a newer one started.
   expect(finishCall(t, 'Bash')?.running).toBe('ide › getDiagnostics')
   expect(finishCall(t, 'mcp__ide__getDiagnostics')?.running).toBeUndefined()
@@ -140,4 +146,17 @@ test('a peek lists the newest calls and counts the rest', () => {
   expect(shown.length).toBe(PEEK_MAX)
   expect(hidden).toBe(3)
   expect(shown[0]?.id).toBe('3')
+})
+
+test('a peeked call shows how long it took and the first line it returned', () => {
+  expect(duration(42)).toBe('42ms')
+  expect(duration(2400)).toBe('2.4s')
+  expect(duration(65_000)).toBe('1m 05s')
+  expect(resultPreview({ text: '\n\n  On branch main\nnothing to commit' })).toBe('On branch main')
+  expect(resultPreview({ result: 'Checklist updated.' })).toBe('Checklist updated.')
+  expect(resultPreview({ deny: 'Guard Rails blocked this call' })).toBe('Guard Rails blocked this call')
+  expect(resultPreview({ result: { files: [] } })).toBe('')
+  const list = addCall({ goal: 'g', steps: [{ text: 'A', status: 'active' }] }, { id: 'c1', tool: 'Bash', detail: 'ls' })
+  const ended = endCall(list, 'c1', { isError: false, ms: 120, preview: 'a.txt' })
+  expect(ended.steps[0]?.calls?.[0]).toEqual({ id: 'c1', tool: 'Bash', detail: 'ls', isError: false, ms: 120, preview: 'a.txt' })
 })

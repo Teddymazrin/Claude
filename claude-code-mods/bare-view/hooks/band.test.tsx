@@ -29,7 +29,7 @@ test('the band names each tool in the tally', async ($, on) => {
     const row = await ui.find({ type: 'Text', text: /3 tool calls/ })
     expect(row).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Built-in 2: Bash 1, Read 1/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /MCP 1: microsoft-learn 1/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /MCP 1: microsoft-learn 1 \(microsoft_docs_search\)/ })).toBeTruthy()
     await ui.unmount()
   }
 })
@@ -57,6 +57,9 @@ test('pressing a step peeks at its tool calls, and again hides them', async ($, 
     expect(await ui.find({ type: 'Text', text: /git status/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /missing\.md/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeTruthy()
+    // What each call returned, and how long it took, show under it.
+    expect(await ui.find({ type: 'Text', text: /↳ nope/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: '0ms' })).toBeTruthy()
     await ui.press({ key: 'peek-0' })
     expect(await ui.find({ type: 'Text', text: /git status/ })).toBeFalsy()
     expect(await ui.find({ key: 'peek-1' })).toBeFalsy()

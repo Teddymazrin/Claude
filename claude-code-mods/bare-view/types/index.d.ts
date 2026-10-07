@@ -1,6 +1,6 @@
 export type StepStatus = 'done' | 'active' | 'todo'
-/** One tool call made while a step was open: the tool, a few words on what it did, and whether it failed. */
-export type Call = { id: string; tool: string; detail: string; isError?: boolean }
+/** One tool call made while a step was open: the tool, what it did, whether it failed, how long it took and the first line it returned. */
+export type Call = { id: string; tool: string; detail: string; isError?: boolean; ms?: number; preview?: string }
 export type Step = { text: string; status: StepStatus; calls?: Call[] }
 /**
  * Tool calls made since the prompt: all of them, the built-in ones by tool name,
