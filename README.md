@@ -9,6 +9,7 @@ Mods for the Claude Code terminal by Teddymazrin, published as the `teddymazrin-
 | [Bare View](claude-code-mods/README.md#bare-view) | A live task checklist above the prompt, with a tally of every tool call by name; hides the tool-call noise |
 | [Control Panel](claude-code-mods/README.md#control-panel) | A status row (plan, model, effort, context, usage) and a panel to pick the model and effort and switch mods on and off |
 | [Action Steps](claude-code-mods/README.md#action-steps) | Numbered follow-up steps (run this, sign in, check that) in a side pane that opens by itself after a task |
+| [Guard Rails](claude-code-mods/README.md#guard-rails) | Asks before risky commands and edits (rm -rf, force pushes, Azure deletes, settings, .env and SSH files) and logs what it stopped |
 
 ## Install
 
@@ -30,6 +31,7 @@ One line per mod. Press Enter for the user scope:
 /plugin install bare-view@teddymazrin-mods
 /plugin install control-panel@teddymazrin-mods
 /plugin install action-steps@teddymazrin-mods
+/plugin install guard-rails@teddymazrin-mods
 ```
 
 ## Update

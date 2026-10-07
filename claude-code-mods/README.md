@@ -1,6 +1,6 @@
 # Claude Code mods
 
-Three mods for the Claude Code terminal.
+Four mods for the Claude Code terminal.
 
 ## Before you install: add the marketplace (one time)
 
@@ -64,6 +64,26 @@ Check my Azure roles                       3 steps
 
 ```
 /plugin install action-steps@teddymazrin-mods
+```
+
+## Guard Rails
+
+Before Claude runs a risky command or edits a sensitive file, Guard Rails stops and asks: **Block** or **Allow once**. Anything else runs as normal.
+
+It asks about:
+
+- **Deletes:** `rm -rf`, `Remove-Item -Recurse -Force`, `git clean -f`
+- **Git history:** `git push --force` (not `--force-with-lease`), `git reset --hard`
+- **Azure and Microsoft Graph:** `Remove-Az…`, `Remove-Mg…`, `az … delete`
+- **The machine:** `Format-Volume`, `Clear-Disk`, `diskpart`, `Restart-Computer`, `Stop-Computer`, `shutdown`
+- **Files:** edits to `~/.claude/settings.json`, `.env` files and anything under `.ssh`
+
+Commands are checked in both Bash and PowerShell. A blocked call tells Claude not to retry or work around it, and shows a toast. If the question is dismissed, or nobody can answer it (`claude -p`), the call is blocked.
+
+`/guard-rails` lists the last 20 calls it stopped or let through, newest first.
+
+```
+/plugin install guard-rails@teddymazrin-mods
 ```
 
 ## Updating the mods

@@ -1,0 +1,10 @@
+{
+  "name": "guard-rails",
+  "version": "1.0.0",
+  "description": "Guard Rails. Asks before risky commands and edits (rm -rf, force pushes, Azure deletes, Claude settings, .env and SSH files) and keeps a log of what it stopped",
+  "author": {
+    "name": "Teddymazrin"
+  },
+  "homepage": "https://github.com/Teddymazrin/Claude/tree/main/claude-code-mods",
+  "license": "MIT"
+}

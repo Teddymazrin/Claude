@@ -19,6 +19,11 @@
       "name": "action-steps",
       "source": "./claude-code-mods/action-steps",
       "description": "Numbered follow-up steps in a side pane that opens by itself after a task"
+    },
+    {
+      "name": "guard-rails",
+      "source": "./claude-code-mods/guard-rails",
+      "description": "Asks before risky commands and edits; logs what it stopped"
     }
   ]
 }
