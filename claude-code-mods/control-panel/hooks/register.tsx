@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer, TimerCall } from 'claude-code'
 
-import type { Choice, Effort, Meter, Mod, Plan, Seen } from '../types'
+import type { Choice, Effort, Limit, Meter, Mod, Plan, Seen } from '../types'
 
 const SELF = 'control-panel'
 const PANE = 'control-panel'
@@ -24,7 +24,7 @@ const disabled = atom({ plugin: 'control-panel', key: 'disabled' } as const, [])
 const booted = atom({ plugin: 'control-panel', key: 'booted' } as const, false)
 const choice = atom({ plugin: 'control-panel', key: 'choice' } as const, { model: null, effort: null })
 const seen = atom({ plugin: 'control-panel', key: 'seen' } as const, null)
-const meter = atom({ plugin: 'control-panel', key: 'meter' } as const, { plan: null, context: null, limit: null })
+const meter = atom({ plugin: 'control-panel', key: 'meter' } as const, { plan: null, context: null, limit: null, week: null })
 
 export const MODELS: ReadonlyArray<{ id: string; label: string; short: string; hotkey: string }> = [
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', short: 'Haiku 4.5', hotkey: '1' },
@@ -89,11 +89,33 @@ export const untilReset = (resetsAt: string | undefined, now: number) => {
   return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
-/** The window the row shows: the five-hour one, else the first reported. */
-export const pickLimit = (limits: readonly SessionRateLimit[]) => {
-  const limit = limits.find(l => l.kind === 'five_hour') ?? limits[0]
-  return limit ? { percent: limit.percentUsed, ...(limit.resetsAt ? { resetsAt: limit.resetsAt } : {}) } : null
+const toLimit = (limit: SessionRateLimit | undefined): Limit | null =>
+  limit ? { percent: limit.percentUsed, ...(limit.resetsAt ? { resetsAt: limit.resetsAt } : {}) } : null
+
+/** The short window: the five-hour one, else any other that isn't the week. */
+export const pickLimit = (limits: readonly SessionRateLimit[]) =>
+  toLimit(limits.find(l => l.kind === 'five_hour') ?? limits.find(l => l.kind !== 'seven_day'))
+
+/** The weekly window. */
+export const pickWeek = (limits: readonly SessionRateLimit[]) => toLimit(limits.find(l => l.kind === 'seven_day'))
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** When a window resets, short: a countdown under a day away (4h12m), else the weekday (Fri). */
+export const resetText = (resetsAt: string | undefined, now: number) => {
+  const at = resetsAt ? Date.parse(resetsAt) : NaN
+  if (Number.isNaN(at)) return ''
+  return at - now < 86_400_000 ? untilReset(resetsAt, now).replace(/ 0m$/, '').replace(/ /g, '') : DAYS[new Date(at).getDay()]!
 }
+
+/** A window's piece of the row: `usage 6% · resets 4h12m`. */
+export const limitText = (label: string, l: Limit, now: number) => {
+  const reset = resetText(l.resetsAt, now)
+  return `${label} ${Math.round(l.percent)}%${reset ? ` · resets ${reset}` : ''}`
+}
+
+/** Plain under half, gold to 75%, orange above. */
+const limitColor = (percent: number) => (percent >= 75 ? ORANGE : percent >= 50 ? GOLD : undefined)
 
 /** A key in the environment or in ~/.claude.json means API billing; else a subscription login. */
 async function detectPlan($: EngineInterface, limits: readonly SessionRateLimit[]): Promise<Plan> {
@@ -110,7 +132,7 @@ async function detectPlan($: EngineInterface, limits: readonly SessionRateLimit[
   return /"primaryApiKey"\s*:\s*"[^"]/.test(config) ? 'API' : 'Subscription'
 }
 
-/** The footer line: plan | model | effort | context bar | usage and time to reset. */
+/** The footer line: plan | model | effort | context bar | 5-hour window | weekly window. */
 export const statusText = (m: Meter, model: string | null | undefined, effort: string | null | undefined, now: number) => {
   const bar = meterBar(m.context ?? 0)
   const parts = [
@@ -119,7 +141,8 @@ export const statusText = (m: Meter, model: string | null | undefined, effort: s
     `effort ${effort ? effortName(effort) : '…'}`,
     `ctx ${bar.filled}${bar.empty} ${m.context === null ? '…' : `${m.context}%`}`,
   ]
-  if (m.limit) parts.push(`${Math.round(m.limit.percent)}% ${untilReset(m.limit.resetsAt, now)}`.trim())
+  if (m.limit) parts.push(limitText('usage', m.limit, now))
+  if (m.week) parts.push(limitText('weekly', m.week, now))
   return parts.join(' | ')
 }
 
@@ -127,7 +150,8 @@ async function measure($: EngineInterface, context: number | undefined, limits: 
   const before = await read($, meter)
   const plan = before.plan === 'Subscription' || (before.plan && limits.length === 0) ? before.plan : await detectPlan($, limits)
   const limit = pickLimit(limits) ?? before.limit
-  await update($, meter, () => ({ plan, context: context ?? before.context, limit }))
+  const week = pickWeek(limits) ?? before.week
+  await update($, meter, () => ({ plan, context: context ?? before.context, limit, week }))
 }
 
 /** The request as it should be sent: the override where one is set, the engine's otherwise. */
@@ -416,7 +440,17 @@ export const register: Register = on => {
     const ctx = m.context ?? 0
     const bar = meterBar(ctx)
     const ctxColor = ctx >= 75 ? ORANGE : ctx >= 50 ? GOLD : GREEN
-    const reset = m.limit ? untilReset(m.limit.resetsAt, now) : ''
+    // A usage window: dim label, bright percent, dim reset, after its own separator.
+    const window = (label: string, l: Limit | null) => {
+      if (!l) return null
+      const reset = resetText(l.resetsAt, now)
+      return [
+        <Text key={`${label}-sep`} dimColor> | </Text>,
+        <Text key={`${label}-label`} dimColor>{`${label} `}</Text>,
+        <Text key={`${label}-pct`} color={limitColor(l.percent)}>{`${Math.round(l.percent)}%`}</Text>,
+        reset ? <Text key={`${label}-reset`} dimColor>{` · resets ${reset}`}</Text> : null,
+      ]
+    }
 
     return (
       <Box flexDirection="column" alignItems="flex-start">
@@ -432,9 +466,8 @@ export const register: Register = on => {
           <Text color={ctxColor}>{bar.filled}</Text>
           <Text color={SLATE}>{bar.empty}</Text>
           <Text color={ctxColor}> {m.context === null ? '…' : `${ctx}%`}</Text>
-          {m.limit && sep}
-          {m.limit && <Text>{`${Math.round(m.limit.percent)}%`}</Text>}
-          {m.limit && reset && <Text dimColor>{` ${reset}`}</Text>}
+          {window('usage', m.limit)}
+          {window('weekly', m.week)}
         </Box>
         {below}
       </Box>

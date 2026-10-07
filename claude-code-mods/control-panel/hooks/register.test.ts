@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EFFORTS, MODELS, QUICK, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, pickLimit, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { EFFORTS, MODELS, QUICK, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, pickLimit, pickWeek, resetText, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -66,11 +66,15 @@ test('shows the five-hour window first', () => {
 
 test('builds the footer line', () => {
   const now = Date.parse('2026-10-06T12:00:00Z')
-  const m = { plan: 'Subscription' as const, context: 1, limit: { percent: 6, resetsAt: '2026-10-06T16:12:00Z' } }
+  const m = { plan: 'Subscription' as const, context: 1, limit: { percent: 6, resetsAt: '2026-10-06T16:12:00Z' }, week: null }
   expect(statusText(m, 'claude-opus-5-5', 'medium', now)).toBe(
-    'Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | 6% 4h 12m',
+    'Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | usage 6% · resets 4h12m',
   )
-  expect(statusText({ plan: 'API', context: null, limit: null }, null, null, now)).toBe('API | … | effort … | ctx ░░░░░░░░ …')
+  const both = { ...m, week: { percent: 31.4, resetsAt: '2026-10-07T03:00:00Z' } }
+  expect(statusText(both, 'claude-opus-5-5', 'medium', now)).toBe(
+    'Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | usage 6% · resets 4h12m | weekly 31% · resets 15h',
+  )
+  expect(statusText({ plan: 'API', context: null, limit: null, week: null }, null, null, now)).toBe('API | … | effort … | ctx ░░░░░░░░ …')
 })
 
 test('reads installed plugin folders and tells them from dev folders', () => {
@@ -122,4 +126,21 @@ test('quick commands are plain buttons and only /clear asks first', () => {
   for (const q of QUICK) expect('hotkey' in q).toBe(false)
   expect(QUICK.map(q => q.command)).toEqual(['reload-plugins', 'clear'])
   expect(QUICK.filter(q => q.confirm).map(q => q.command)).toEqual(['clear'])
+})
+
+test('reads the weekly window apart from the five-hour one', () => {
+  const limits = [
+    { kind: 'seven_day', percentUsed: 40, resetsAt: '2026-10-09T15:00:00Z' },
+    { kind: 'five_hour', percentUsed: 6 },
+  ]
+  expect(pickWeek(limits)).toEqual({ percent: 40, resetsAt: '2026-10-09T15:00:00Z' })
+  expect(pickWeek([{ kind: 'five_hour', percentUsed: 6 }])).toBe(null)
+  expect(pickLimit([{ kind: 'seven_day', percentUsed: 40 }])).toBe(null)
+})
+
+test('shows a reset as a countdown under a day, else the weekday', () => {
+  const now = Date.parse('2026-10-06T12:00:00Z')
+  expect(resetText('2026-10-06T16:12:00Z', now)).toBe('4h12m')
+  expect(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).toContain(resetText('2026-10-09T15:00:00Z', now))
+  expect(resetText(undefined, now)).toBe('')
 })

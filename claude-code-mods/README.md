@@ -5,7 +5,7 @@ Five mods for Claude Code. They work in the terminal and in the desktop app's Co
 | Mod | What it does |
 | --- | --- |
 | [Bare View](#bare-view) | A live task checklist above the prompt, with a tally of every tool call and a peek at each step's calls; hides the tool-call noise |
-| [Control Panel](#control-panel) | A status row (plan, model, effort, context, usage) and a panel to pick the model and effort, reload or clear, and switch mods on and off |
+| [Control Panel](#control-panel) | A status row (plan, model, effort, context, 5-hour and weekly limits) and a panel to pick the model and effort, reload or clear, and switch mods on and off |
 | [Action Steps](#action-steps) | Follow-up steps (run this, sign in, check that) in a side pane you can tick off |
 | [Guard Rails](#guard-rails) | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
@@ -43,14 +43,16 @@ A live task checklist above the prompt: the goal, a progress bar, each step and 
 Shows as **◆ Control Panel** in the footer, with a status row under the prompt:
 
 ```
-Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | 6% 4h 12m
+Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | usage 6% · resets 4h12m | weekly 31% · resets Fri
 ```
 
 - **Subscription / API:** how this session is billed. **Subscription** is your Claude plan (usage comes out of its limits); **API** is an API key, Bedrock or Vertex (billed per token). It only shows this; it doesn't change it. It's worked out on your computer: Subscription once Claude Code reports plan usage limits, otherwise API if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, a Bedrock or Vertex setting, or a key in `~/.claude.json` is present. It only checks that a key exists; it never reads, stores or sends it
 - **Model** (`Opus 5.5`): the model your requests go out with: the one you picked in the panel, or what Claude Code last used
 - **Effort** (`effort Medium`): the reasoning effort your requests go out with, picked the same way
 - **Context** (`ctx ░░░░░░░░ 1%`): how full the conversation's context window is. Green under 50%, gold to 75%, orange above
-- **Usage** (`6% 4h 12m`): how much of your plan's 5-hour usage limit you've used, and the time until it resets. Shown on a subscription once Claude Code reports it
+- **Usage** (`usage 6% · resets 4h12m`): how much of your plan's rolling 5-hour usage limit you've used, and the time until it resets
+- **Weekly** (`weekly 31% · resets Fri`): the same for the 7-day limit. The reset shows as a weekday, or as a countdown once it's under a day away
+- Both show on a subscription once Claude Code reports them. Each percentage turns gold at 50% and orange at 75%
 
 Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 

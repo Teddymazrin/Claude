@@ -1,6 +1,6 @@
 {
   "name": "control-panel",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "Model, effort and mods. A status row under the prompt (plan, model, effort, context, usage) and a footer button that opens a panel for picking the model and effort and switching mods on and off",
   "author": {
     "name": "Teddymazrin"
