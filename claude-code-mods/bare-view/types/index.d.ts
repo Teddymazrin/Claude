@@ -7,6 +7,8 @@ export type Step = { text: string; status: StepStatus; calls?: Call[] }
  * the MCP ones by server, and the one running right now.
  */
 export type Tally = { total: number; mcp: Record<string, number>; builtIn?: Record<string, number>; running?: string }
+/** A group of the tally row that expands to list its tools. */
+export type TallyKey = 'builtIn' | 'mcp'
 /** `early` holds calls made before the plan arrived; they join its first step. */
 export type Checklist = { goal: string; steps: Step[]; startedAt?: number; finishedAt?: number; tally?: Tally; early?: Call[] }
 
@@ -17,6 +19,8 @@ declare module 'claude-code' {
       showTools: boolean
       /** The step whose tool calls are shown under it; null for none. */
       peek: number | null
+      /** The tally groups expanded to list their tools. */
+      openTally: TallyKey[]
     }
   }
 }

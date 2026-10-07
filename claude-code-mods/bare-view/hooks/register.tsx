@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Call, Checklist, Step, StepStatus, Tally } from '../types'
+import type { Call, Checklist, Step, StepStatus, Tally, TallyKey } from '../types'
 
 const PLUGIN = 'bare-view'
 const TOOL = 'checklist'
@@ -12,6 +12,7 @@ export const PEEK_MAX = 8
 const checklist = atom({ plugin: 'bare-view', key: 'checklist' } as const, null)
 const showTools = atom({ plugin: 'bare-view', key: 'showTools' } as const, false)
 const peek = atom({ plugin: 'bare-view', key: 'peek' } as const, null)
+const openTally = atom({ plugin: 'bare-view', key: 'openTally' } as const, [] as TallyKey[])
 
 // Palette, after the reference: pink frame, orange-to-pink progress, green done, violet working.
 const FRAME = '#e0457b'
@@ -92,42 +93,23 @@ export const countCall = (tally: Tally | undefined, tool: string): Tally => {
 export const finishCall = (tally: Tally | undefined, tool: string): Tally | undefined =>
   tally && tally.running === toolLabel(tool) ? { ...tally, running: undefined } : tally
 
-/** "Gmail 2 (read, search), ide 1 (getDiagnostics)": each server, its calls, and the tools it ran. */
-export const byServer = (counts: Record<string, number>) => {
-  const servers = new Map<string, { n: number; tools: string[] }>()
-  for (const [key, n] of Object.entries(counts)) {
-    const [server, tool] = key.split(' › ')
-    const entry = servers.get(server!) ?? { n: 0, tools: [] }
-    entry.n += n
-    if (tool) entry.tools.push(tool)
-    servers.set(server!, entry)
-  }
-  return [...servers.entries()]
-    .sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]))
-    .map(([server, { n, tools }]) => (tools.length ? `${server} ${n} (${tools.sort().join(', ')})` : `${server} ${n}`))
-    .join(', ')
-}
+const byCount = (counts: Record<string, number>): [string, number][] =>
+  Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 
-const byCount = (counts: Record<string, number>) =>
-  Object.entries(counts)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([name, n]) => `${name} ${n}`)
-    .join(', ')
-
-/** One line for the band: "12 tool calls · Built-in 9: Bash 5, Read 4 · MCP 3: Gmail 2, microsoft-learn 1". */
-export const tallyLine = (tally: Tally | undefined) => {
+/**
+ * The tally row's groups: "Built-in 9" and "MCP 3", each with the tools it ran
+ * ("Bash 5", "Gmail › search 2"), listed when the group is expanded. A tally
+ * counted before tools were named has a count and no tools.
+ */
+export const tallyGroups = (tally: Tally | undefined) => {
   const total = tally?.total ?? 0
   const mcp = tally?.mcp ?? {}
   const mcpTotal = Object.values(mcp).reduce((n, c) => n + c, 0)
   const builtInTotal = total - mcpTotal
-  const parts = [`${total} tool call${total === 1 ? '' : 's'}`]
-  if (builtInTotal > 0) {
-    // A tally counted before tools were named has only the number.
-    const named = tally?.builtIn && Object.keys(tally.builtIn).length > 0
-    parts.push(named ? `Built-in ${builtInTotal}: ${byCount(tally!.builtIn!)}` : `${builtInTotal} built-in`)
-  }
-  if (mcpTotal > 0) parts.push(`MCP ${mcpTotal}: ${byServer(mcp)}`)
-  return parts.join(' · ')
+  const groups: { key: TallyKey; label: string; n: number; tools: [string, number][] }[] = []
+  if (builtInTotal > 0) groups.push({ key: 'builtIn', label: 'Built-in', n: builtInTotal, tools: byCount(tally?.builtIn ?? {}) })
+  if (mcpTotal > 0) groups.push({ key: 'mcp', label: 'MCP', n: mcpTotal, tools: byCount(mcp) })
+  return groups
 }
 
 // The input field that says what a call did, by tool; any other tool shows its first short string.
@@ -328,6 +310,7 @@ export const register: Register = on => {
     const startedAt = await $.clock.now()
     await update($, checklist, () => ({ goal, steps: [], startedAt }))
     await update($, peek, () => null)
+    await update($, openTally, () => [])
     return next({ ...e, context: [...(e.context ?? []), REMINDER] })
   }).catch(($, e, next) => next(e))
 
@@ -412,6 +395,8 @@ export const register: Register = on => {
 
     const { Box, Text, Button } = $.ui.resolve(e)
     const peeked = await read($, peek)
+    const opened = await read($, openTally)
+    const groups = tallyGroups(list.tally)
     const now = await $.clock.now()
     const { done, total, percent } = progress(list)
     const isFinished = total > 0 && done === total
@@ -428,7 +413,6 @@ export const register: Register = on => {
 
     // The tool running right now sits at the right end of the tally row, while a turn is going.
     const running = e.props.isWorking && list.tally?.running ? `▶ ${fit(list.tally.running, 40).trimEnd()}` : ''
-    const runningW = running ? running.length + 2 : 0
 
     const textW = Math.max(16, Math.min(44, Math.floor(inner * 0.4)))
     const miniW = 12
@@ -493,12 +477,51 @@ export const register: Register = on => {
           </Box>
 
           {list.tally && list.tally.total > 0 ? (
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text dimColor>
-                <Text color={BLUE}>⚙ </Text>
-                {fit(tallyLine(list.tally), inner - 2 - runningW).trimEnd()}
-              </Text>
-              {running ? <Text color={VIOLET_TO}>{running}</Text> : null}
+            <Box flexDirection="column">
+              <Box flexDirection="row" justifyContent="space-between">
+                <Box flexDirection="row">
+                  <Text dimColor>
+                    <Text color={BLUE}>⚙ </Text>
+                    {`${list.tally.total} tool call${list.tally.total === 1 ? '' : 's'}`}
+                  </Text>
+                  {groups.map(g => {
+                    const isOpen = opened.includes(g.key)
+                    const label = `${g.label}: ${g.n}`
+                    return (
+                      <Box key={`tally-${g.key}-head`} flexDirection="row">
+                        <Text dimColor> · </Text>
+                        {g.tools.length > 0 ? (
+                          // A group that knows its tools is a button: press it to list them.
+                          <Button
+                            key={`tally-${g.key}`}
+                            plain
+                            label={`${isOpen ? '▾' : '▸'} ${label}`}
+                            dimColor={!isOpen}
+                            hover={{ bold: true }}
+                            onPress={() => update($, openTally, v => (v.includes(g.key) ? v.filter(k => k !== g.key) : [...v, g.key]))}
+                          />
+                        ) : (
+                          <Text dimColor>{label}</Text>
+                        )}
+                      </Box>
+                    )
+                  })}
+                </Box>
+                {running ? <Text color={VIOLET_TO}>{running}</Text> : null}
+              </Box>
+              {groups
+                .filter(g => opened.includes(g.key) && g.tools.length > 0)
+                .map(g => (
+                  <Box key={`tally-${g.key}-tools`} flexDirection="column" marginLeft={2}>
+                    {g.tools.map(([tool, n]) => (
+                      <Text key={`tally-${g.key}-${tool}`}>
+                        <Text color={BLUE}>› </Text>
+                        {fit(tool, Math.max(0, inner - 10)).trimEnd()}
+                        <Text dimColor>{` ${n}`}</Text>
+                      </Text>
+                    ))}
+                  </Box>
+                ))}
             </Box>
           ) : null}
 

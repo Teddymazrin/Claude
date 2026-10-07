@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, addCall, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyLine, toolLabel } from './register'
+import { PEEK_MAX, addCall, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyGroups, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -20,15 +20,17 @@ test('tallies every tool by name, MCP ones by server, and the one running', () =
     builtIn: { Bash: 2, Read: 1 },
     running: 'ide › getDiagnostics',
   })
-  // Each MCP server with its count and the tools it ran.
-  expect(tallyLine(t)).toBe('6 tool calls · Built-in 3: Bash 2, Read 1 · MCP 3: Gmail 2 (read, search), ide 1 (getDiagnostics)')
+  // Each group with its count and the tools it ran, the most used first.
+  expect(tallyGroups(t)).toEqual([
+    { key: 'builtIn', label: 'Built-in', n: 3, tools: [['Bash', 2], ['Read', 1]] },
+    { key: 'mcp', label: 'MCP', n: 3, tools: [['Gmail › read', 1], ['Gmail › search', 1], ['ide › getDiagnostics', 1]] },
+  ])
   // The running tool clears when it finishes, but not when an earlier call finishes after a newer one started.
   expect(finishCall(t, 'Bash')?.running).toBe('ide › getDiagnostics')
   expect(finishCall(t, 'mcp__ide__getDiagnostics')?.running).toBeUndefined()
-  expect(tallyLine({ total: 2, mcp: {}, builtIn: { ToolSearch: 1, Bash: 1 } })).toBe('2 tool calls · Built-in 2: Bash 1, ToolSearch 1')
-  expect(tallyLine({ total: 2, mcp: { Gmail: 2 } })).toBe('2 tool calls · MCP 2: Gmail 2')
-  // A tally saved before tools were named still reads.
-  expect(tallyLine({ total: 3, mcp: { 'microsoft-learn': 1 } })).toBe('3 tool calls · 2 built-in · MCP 1: microsoft-learn 1')
+  expect(tallyGroups({ total: 2, mcp: { Gmail: 2 } })).toEqual([{ key: 'mcp', label: 'MCP', n: 2, tools: [['Gmail', 2]] }])
+  // A tally saved before tools were named still counts, with nothing to list.
+  expect(tallyGroups({ total: 3, mcp: { 'microsoft-learn': 1 } })[0]).toEqual({ key: 'builtIn', label: 'Built-in', n: 2, tools: [] })
 })
 
 test('parses and scores a checklist', () => {

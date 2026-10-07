@@ -6,7 +6,7 @@ const BAND = {
   props: { hasSurvey: false, isWorking: true, maxRows: 20, bodyColumns: 156, scroll: { offset: 0, bodyRows: 20 }, view: {} },
 } as const
 
-test('the band names each tool in the tally', async ($, on) => {
+test('each tally group expands to list its tools', async ($, on) => {
   on('clock.now', () => ({ value: 1_000 }))
   // Stands for the engine: answers the tools and draws an empty band beneath.
   on('tool.call', () => ({ result: 'ok' }))
@@ -26,10 +26,22 @@ test('the band names each tool in the tally', async ($, on) => {
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND } as never)
-    const row = await ui.find({ type: 'Text', text: /3 tool calls/ })
-    expect(row).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Built-in 2: Bash 1, Read 1/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /MCP 1: microsoft-learn 1 \(microsoft_docs_search\)/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /3 tool calls/ })).toBeTruthy()
+    // Collapsed, each group is just its count.
+    expect(await ui.find({ key: 'tally-builtIn' })).toBeTruthy()
+    expect(await ui.find({ key: 'tally-mcp' })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /microsoft_docs_search/ })).toBeFalsy()
+    await ui.press({ key: 'tally-mcp' })
+    expect(await ui.find({ type: 'Text', text: /microsoft-learn › microsoft_docs_search/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /› Bash 1/ })).toBeFalsy()
+    await ui.press({ key: 'tally-builtIn' })
+    expect(await ui.find({ type: 'Text', text: /› Bash 1/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /› Read 1/ })).toBeTruthy()
+    // Pressed again, they fold back up.
+    await ui.press({ key: 'tally-mcp' })
+    await ui.press({ key: 'tally-builtIn' })
+    expect(await ui.find({ type: 'Text', text: /microsoft_docs_search/ })).toBeFalsy()
+    expect(await ui.find({ type: 'Text', text: /› Bash 1/ })).toBeFalsy()
     await ui.unmount()
   }
 })
