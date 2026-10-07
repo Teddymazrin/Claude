@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer, TimerCall } from 'claude-code'
 
-import type { Choice, Effort, Limit, Meter, Mod, Plan, Seen } from '../types'
+import type { Choice, Effort, LastCall, Limit, Meter, Mod, Plan, Seen } from '../types'
 
 const SELF = 'control-panel'
 const PANE = 'control-panel'
@@ -18,6 +18,7 @@ const ORANGE = '#e06c3c'
 const MAUVE = '#a8729a'
 const GREEN = '#1f9d63'
 const SLATE = '#2a2f3a'
+const RED = '#e5484d'
 
 const mods = atom({ plugin: 'control-panel', key: 'mods' } as const, [])
 const disabled = atom({ plugin: 'control-panel', key: 'disabled' } as const, [])
@@ -25,6 +26,8 @@ const booted = atom({ plugin: 'control-panel', key: 'booted' } as const, false)
 const choice = atom({ plugin: 'control-panel', key: 'choice' } as const, { model: null, effort: null })
 const seen = atom({ plugin: 'control-panel', key: 'seen' } as const, null)
 const meter = atom({ plugin: 'control-panel', key: 'meter' } as const, { plan: null, context: null, limit: null, week: null })
+// When the main thread's last response finished, and which model gave it: the prompt cache's clock starts there.
+const lastCall = atom({ plugin: 'control-panel', key: 'lastCall' } as const, null)
 
 export const MODELS: ReadonlyArray<{ id: string; label: string; short: string; hotkey: string }> = [
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', short: 'Haiku 4.5', hotkey: '1' },
@@ -132,8 +135,34 @@ async function detectPlan($: EngineInterface, limits: readonly SessionRateLimit[
   return /"primaryApiKey"\s*:\s*"[^"]/.test(config) ? 'API' : 'Subscription'
 }
 
+/**
+ * How long the prompt cache stays warm after a request. Claude Code doesn't
+ * tell a mod, so this is the usual lifetime: an hour on a subscription, five
+ * minutes on an API key.
+ */
+export const cacheTtlMs = (plan: Plan | null) => (plan === 'API' ? 5 : 60) * 60_000
+
+/** One model however it's spelled: `claude-opus-5-5[1m]` and `claude-opus-5-5-20260101` both read `claude-opus-5-5`. */
+export const baseModel = (id: string) => id.replace(/\[[^\]]*\]$/, '').replace(/-\d{8}$/, '').toLowerCase()
+
+/**
+ * Time left before the cache goes cold: `cache 42m`, `cache <1m`, `cache cold`;
+ * '' before the first response. Each model has its own cache, so when the next
+ * request goes to a different model than the last reply came from, it's cold.
+ * A bare number is what an earlier version stored, with no model.
+ */
+export const cacheText = (last: LastCall | number | null, ttlMs: number, now: number, nextModel?: string) => {
+  if (last === null) return ''
+  const call = typeof last === 'number' ? { at: last, model: '' } : last
+  if (call.model && nextModel && baseModel(call.model) !== baseModel(nextModel)) return 'cache cold · new model'
+  const left = call.at + ttlMs - now
+  if (left <= 0) return 'cache cold'
+  const mins = Math.floor(left / 60_000)
+  return mins < 1 ? 'cache <1m' : `cache ${mins}m`
+}
+
 /** The footer line: plan | model | effort | context bar | 5-hour window | weekly window. */
-export const statusText = (m: Meter, model: string | null | undefined, effort: string | null | undefined, now: number) => {
+export const statusText = (m: Meter, model: string | null | undefined, effort: string | null | undefined, now: number, cache = '') => {
   const bar = meterBar(m.context ?? 0)
   const parts = [
     m.plan ?? '…',
@@ -141,6 +170,7 @@ export const statusText = (m: Meter, model: string | null | undefined, effort: s
     `effort ${effort ? effortName(effort) : '…'}`,
     `ctx ${bar.filled}${bar.empty} ${m.context === null ? '…' : `${m.context}%`}`,
   ]
+  if (cache) parts.push(cache)
   if (m.limit) parts.push(limitText('usage', m.limit, now))
   if (m.week) parts.push(limitText('weekly', m.week, now))
   return parts.join(' | ')
@@ -315,6 +345,8 @@ export const debouncer = (ms: number) => {
 
 const scheduleReload = debouncer(RELOAD_DELAY_MS)
 
+let cacheTick: Timer | undefined
+
 // One switch at a time, so quick presses read and write the list and settings.json in order.
 let switching: Promise<void> = Promise.resolve()
 
@@ -393,6 +425,11 @@ export const register: Register = on => {
     await measure($, usage?.context.percent, usage?.rateLimits ?? []).catch(() => {})
     // Clear the footer line an earlier version pinned above auto mode.
     $.ui.status(undefined)
+    // Redraw once a minute so the cache countdown moves while the session is idle.
+    cacheTick?.cancel()
+    cacheTick = $.clock.every(60_000, () => {
+      $.ui.invalidate('ui.render')
+    })
 
     // Once per session: restore the saved model pick, and reload switched-off mods
     // that loaded before Control Panel and so slipped past plugin.register.
@@ -420,6 +457,15 @@ export const register: Register = on => {
     return yield* next(sent)
   })
 
+  // The main thread's response just landed: the cache was read or written now.
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined && e.usage) {
+      const call = { at: await $.clock.now(), model: e.usage.model }
+      await update($, lastCall, () => call)
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('session.measure', async ($, e, next) => {
     await measure($, e.context.percent, e.rateLimits)
     return next(e)
@@ -440,6 +486,9 @@ export const register: Register = on => {
     const ctx = m.context ?? 0
     const bar = meterBar(ctx)
     const ctxColor = ctx >= 75 ? ORANGE : ctx >= 50 ? GOLD : GREEN
+    // The next request's model: the panel's pick, else the session's (which follows /model).
+    const nextModel = c.model ?? (await $.session.model().catch(() => undefined))
+    const cache = cacheText(await read($, lastCall), cacheTtlMs(m.plan), now, nextModel)
     // A usage window: dim label, bright percent, dim reset, after its own separator.
     const window = (label: string, l: Limit | null) => {
       if (!l) return null
@@ -466,6 +515,8 @@ export const register: Register = on => {
           <Text color={ctxColor}>{bar.filled}</Text>
           <Text color={SLATE}>{bar.empty}</Text>
           <Text color={ctxColor}> {m.context === null ? '…' : `${ctx}%`}</Text>
+          {cache && sep}
+          {cache && <Text color={RED}>{cache}</Text>}
           {window('usage', m.limit)}
           {window('weekly', m.week)}
         </Box>
