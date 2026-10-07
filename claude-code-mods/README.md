@@ -1,14 +1,15 @@
 # Claude Code mods
 
-Five mods for Claude Code. They work in the terminal and in the desktop app's Code tab.
+Six mods for Claude Code. They work in the terminal and in the desktop app's Code tab.
 
 | Mod | What it does |
 | --- | --- |
 | [Bare View](#bare-view) | A live task checklist above the prompt, with a tally of every tool call and a peek at each step's calls; hides the tool-call noise |
-| [Control Panel](#control-panel) | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, reload or clear, and switch mods on and off |
+| [Control Panel](#control-panel) | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Action Steps](#action-steps) | Follow-up steps (run this, sign in, check that) in a side pane you can tick off |
 | [Guard Rails](#guard-rails) | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
+| [Context Lens](#context-lens) | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
 
 ## Install
 
@@ -26,6 +27,7 @@ Then install the mods you want, one line each (press Enter for the user scope):
 /plugin install action-steps@teddymazrin-mods
 /plugin install guard-rails@teddymazrin-mods
 /plugin install context-handoff@teddymazrin-mods
+/plugin install context-lens@teddymazrin-mods
 ```
 
 Run `/reload-plugins` to load them, or start a new session.
@@ -59,8 +61,11 @@ Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
 - **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`)
 - **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
-- **Run:** **↻ Reload plugins** runs `/reload-plugins`; **⌫ Clear** runs `/clear` after asking you to confirm
-- **Mods:** switch each installed mod on or off. The switch is saved straight away, and one `/reload-plugins` runs 1.5 seconds after your last click, so flipping several mods quickly applies them all at once
+- **Settings:** switch **Bare View** and **Guard Rails** on or off. The switch is saved straight away, and one `/reload-plugins` runs 1.5 seconds after your last click, so flipping both quickly applies them at once. The other mods have no switch and always stay on
+- **Actions:** one row each, at the bottom of the panel:
+  - **Context Lens ▸ Open:** closes the panel and opens Context Lens in front. Shows only while Context Lens is installed and on
+  - **Reload plugins ▸ Run:** runs `/reload-plugins`
+  - **Clear chat ▸ Run:** runs `/clear` after asking you to confirm
 
 ## Action Steps
 
@@ -108,6 +113,26 @@ Keeps a long session from losing its thread when the context window fills.
 
 The usual flow is `/handoff`, then **⧉ Copy prompt**, then `/clear` (or **Clear** in Control Panel), then paste.
 
+## Context Lens
+
+Shows where your context window is going, so you can see what to trim before it fills. Run `/context-lens`, or press **Context Lens ▸ Open** in Control Panel, to open the pane:
+
+```
+◆  C O N T E X T   L E N S                                   Opus 5.5
+17%  34.0k of 200.0k · compacts at 184.0k
+██████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+■ Messages                    30.0k    15%
+■ System tools                 9.2k     5%
+■ System prompt                4.0k     2%
+■ Memory files                 3.0k     2%
+...
+```
+
+- **The bar and rows:** the same categories `/context` shows (system prompt, system tools, MCP tools, custom agents, memory files, skills and messages), largest first, each with its tokens and share of the window, plus free space and the autocompact buffer
+- **Biggest items:** the top 5 memory files (such as each `CLAUDE.md`), MCP servers, skills and agents by tokens, so you can see which one to cut
+- **Updates by itself:** while the pane is open it refreshes after each turn with a quick local estimate, which costs nothing
+- **Count exactly** (key `c`): counts every category with the token-count API, as `/context` does. The footer says whether the numbers are **Estimated** or **Counted exactly**
+
 ## Updating the mods
 
 ### Turn on auto-update (recommended)
@@ -131,6 +156,7 @@ claude plugin update control-panel@teddymazrin-mods
 claude plugin update action-steps@teddymazrin-mods
 claude plugin update guard-rails@teddymazrin-mods
 claude plugin update context-handoff@teddymazrin-mods
+claude plugin update context-lens@teddymazrin-mods
 ```
 
 Then run `/reload-plugins` in a session that's already open, or restart Claude Code. A mod that's already on the latest version is left as it is. `claude plugin list` shows what's installed and at which version.

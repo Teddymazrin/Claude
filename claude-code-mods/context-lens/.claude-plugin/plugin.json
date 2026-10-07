@@ -1,0 +1,11 @@
+{
+  "name": "context-lens",
+  "version": "1.0.0",
+  "description": "Context Lens. Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages, in a pane, with an exact count on demand",
+  "author": {
+    "name": "Teddymazrin"
+  },
+  "homepage": "https://github.com/Teddymazrin/Claude/tree/main/claude-code-mods",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

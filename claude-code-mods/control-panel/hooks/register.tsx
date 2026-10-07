@@ -196,6 +196,21 @@ const SUMMARY_WORDS = 5
 // A few words on what a mod does. A description that opens with a short
 // sentence ("Live task checklist. Turns every…") gives that sentence; any other
 // gives its first clause, with a "Name:" lead and a leading article dropped.
+/** The mods the panel lets you switch off, in order, each with a short line; every other mod stays on. */
+export const SETTINGS: ReadonlyArray<{ name: string; line: string }> = [
+  { name: 'bare-view', line: 'Checklist view, hides tool clutter' },
+  { name: 'guard-rails', line: 'Asks before risky commands' },
+]
+
+export const isSetting = (name: string) => SETTINGS.some(setting => setting.name === name)
+
+/** The installed mods the Settings section lists, in SETTINGS order. */
+export const settingRows = <M extends { name: string }>(list: readonly M[]) =>
+  SETTINGS.flatMap(setting => {
+    const mod = list.find(m => m.name === setting.name)
+    return mod ? [{ mod, line: setting.line }] : []
+  })
+
 export const blurb = (description: string) => {
   const text = description.replace(/^[^:.]{1,40}:\s*/, '').trim()
   const sentence = /^([^.]+)\.(\s|$)/.exec(text)?.[1]?.trim()
@@ -211,7 +226,8 @@ export const blurb = (description: string) => {
 // The persisted list is the source of truth: plugin.register runs before state is filled.
 async function storedDisabled($: EngineInterface) {
   const value = await $.store.get('disabled')
-  return Array.isArray(value) ? value.filter((n): n is string => typeof n === 'string') : []
+  // Only a setting can be off: a mod switched off by an older version comes back on.
+  return Array.isArray(value) ? value.filter((n): n is string => typeof n === 'string' && isSetting(n)) : []
 }
 
 // Folders of every mod the engine has offered to load, from any source,
@@ -380,10 +396,15 @@ async function switchMod($: EngineInterface, mod: Mod) {
 }
 
 /** The quick commands row: a button per slash command, run as if typed. */
-export const QUICK: ReadonlyArray<{ command: string; label: string; confirm?: string }> = [
-  { command: RELOAD, label: '↻ Reload plugins' },
-  { command: 'clear', label: '⌫ Clear', confirm: 'Clear the conversation and start fresh?' },
+export const QUICK: ReadonlyArray<{ command: string; label: string; blurb: string; verb: string; confirm?: string; mod?: string }> = [
+  { command: 'context-lens', label: 'Context Lens', blurb: 'See what is filling your context window', verb: 'Open', mod: 'context-lens' },
+  { command: RELOAD, label: 'Reload plugins', blurb: 'Pick up mod changes without restarting', verb: 'Run' },
+  { command: 'clear', label: 'Clear chat', blurb: 'Start a fresh conversation (asks first)', verb: 'Run', confirm: 'Clear the conversation and start fresh?' },
 ]
+
+/** The quick buttons to draw: one that opens another mod shows only while that mod is installed and on. */
+export const visibleQuick = (list: readonly { name: string }[], off: readonly string[]) =>
+  QUICK.filter(q => !q.mod || (list.some(m => m.name === q.mod) && !off.includes(q.mod)))
 
 // Runs once the session is idle; /clear asks first, since it can't be undone.
 async function runQuick($: EngineInterface, quick: (typeof QUICK)[number]) {
@@ -391,6 +412,8 @@ async function runQuick($: EngineInterface, quick: (typeof QUICK)[number]) {
     const answer = await $.ui.ask(quick.confirm, { options: ['Clear', 'Cancel'], header: 'Clear' }).catch(() => 'Cancel')
     if (answer !== 'Clear') return
   }
+  // Another mod's pane only comes to the front while the prompt has the keys, so this pane steps aside first.
+  if (quick.mod) await $.ui.close({ id: PANE }).catch(() => {})
   await $.command.run({ command: quick.command }).catch(() => $.ui.toast(`Couldn't run /${quick.command} · type it at the prompt`))
 }
 
@@ -416,7 +439,7 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: COMMAND, description: 'Switch mods on and off, pick the model and effort' })
+    await $.command.register({ name: COMMAND, description: 'Pick the model and effort, and change settings' })
     const off = await storedDisabled($)
     const saved = (await $.store.get('choice')) as Choice | undefined
     await update($, disabled, () => off)
@@ -592,14 +615,10 @@ export const register: Register = on => {
           'EFFORT',
           EFFORTS.map(f => option(`effort-${f.hotkey}`, f.label, effort === f.id, MAUVE, f.hotkey, () => pick($, { effort: f.id }))),
         )}
-        {pickerRow(
-          'RUN',
-          QUICK.map(q => option(`quick-${q.command}`, q.label, false, GOLD, '', () => runQuick($, q))),
-        )}
 
-        {section('Mods')}
-        {list.length === 0 && <Text dimColor>  No mods found.</Text>}
-        {list.map(mod => {
+        {section('Settings')}
+        {settingRows(list).length === 0 && <Text dimColor>  Bare View and Guard Rails are not installed.</Text>}
+        {settingRows(list).map(({ mod, line }) => {
           const isOn = !off.includes(mod.name)
           return (
             <Box key={mod.name} flexDirection="row" hover={{ backgroundColor: SLATE }}>
@@ -607,15 +626,29 @@ export const register: Register = on => {
                 <Text bold={isOn} wrap="truncate-end">{titled(mod.name)}</Text>
               </Box>
               <Box flexGrow={1} flexShrink={1} marginRight={1}>
-                <Text dimColor wrap="truncate-end">{blurb(mod.description)}</Text>
+                <Text dimColor wrap="truncate-end">{line}</Text>
               </Box>
-              <Box width={7} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
+              <Box width={8} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
                 <Button key={`toggle-${mod.name}`} plain label={isOn ? '● On' : '○ Off'} hover={{ bold: true }} onPress={() => toggle($, mod)} />
               </Box>
             </Box>
           )
         })}
 
+        {section('Actions')}
+        {visibleQuick(list, off).map(q => (
+          <Box key={`quick-${q.command}`} flexDirection="row" hover={{ backgroundColor: SLATE }}>
+            <Box width={18} flexShrink={0}>
+              <Text bold wrap="truncate-end">{q.label}</Text>
+            </Box>
+            <Box flexGrow={1} flexShrink={1} marginRight={1}>
+              <Text dimColor wrap="truncate-end">{q.blurb}</Text>
+            </Box>
+            <Box width={8} flexShrink={0} backgroundColor={GOLD} paddingX={1}>
+              <Button key={`quick-btn-${q.command}`} plain label={`▸ ${q.verb}`} hover={{ bold: true }} onPress={() => runQuick($, q)} />
+            </Box>
+          </Box>
+        ))}
       </Box>
     )
   })

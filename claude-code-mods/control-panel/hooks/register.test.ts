@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EFFORTS, MODELS, QUICK, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, baseModel, cacheText, cacheTtlMs, pickLimit, pickWeek, resetText, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { EFFORTS, MODELS, QUICK, SETTINGS, isSetting, settingRows, visibleQuick, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, baseModel, cacheText, cacheTtlMs, pickLimit, pickWeek, resetText, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -124,7 +124,7 @@ test('runs one reload after a burst of switches, with the last one', () => {
 
 test('quick commands are plain buttons and only /clear asks first', () => {
   for (const q of QUICK) expect('hotkey' in q).toBe(false)
-  expect(QUICK.map(q => q.command)).toEqual(['reload-plugins', 'clear'])
+  expect(QUICK.map(q => q.command)).toEqual(['context-lens', 'reload-plugins', 'clear'])
   expect(QUICK.filter(q => q.confirm).map(q => q.command)).toEqual(['clear'])
 })
 
@@ -169,4 +169,26 @@ test('a different model starts with a cold cache', () => {
   expect(cacheText(last, hour, now, 'claude-sonnet-5-5')).toBe('cache cold · new model')
   expect(cacheText(last, hour, now)).toBe('cache 42m')
   expect(cacheText(now - 18 * 60_000, hour, now, 'claude-sonnet-5-5')).toBe('cache 42m')
+})
+
+test('shows the Context button only while Context Lens is installed and on', () => {
+  const lens = [{ name: 'context-lens' }]
+  expect(visibleQuick([], []).map(q => q.command)).toEqual(['reload-plugins', 'clear'])
+  expect(visibleQuick(lens, []).map(q => q.command)).toEqual(['context-lens', 'reload-plugins', 'clear'])
+  expect(visibleQuick(lens, ['context-lens']).map(q => q.command)).toEqual(['reload-plugins', 'clear'])
+})
+
+test('every action says what it does', () => {
+  for (const q of QUICK) {
+    expect(q.blurb.length).toBeGreaterThan(10)
+    expect(['Run', 'Open']).toContain(q.verb)
+  }
+})
+
+test('settings list only Bare View and Guard Rails, in order, with short lines', () => {
+  const list = [{ name: 'guard-rails' }, { name: 'action-steps' }, { name: 'bare-view' }, { name: 'context-lens' }]
+  expect(settingRows(list).map(row => row.mod.name)).toEqual(['bare-view', 'guard-rails'])
+  expect(settingRows([{ name: 'action-steps' }])).toEqual([])
+  expect(isSetting('context-handoff')).toBe(false)
+  for (const s of SETTINGS) expect(s.line.length).toBeLessThanOrEqual(36)
 })
