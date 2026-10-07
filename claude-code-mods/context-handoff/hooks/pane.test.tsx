@@ -11,8 +11,12 @@ const PANE = {
 
 test('the note Claude sends shows in the pane, and Copy prompt copies it whole', async ($, on) => {
   const copied: string[] = []
-  // Stands for the engine: the project root, the store, the clock and the clipboard.
-  mock.store(on)
+  const stored: unknown[] = []
+  // Stands for the engine: the project root, the store (to prove nothing is saved), the clock and the clipboard.
+  on('store.set', ($, e) => {
+    stored.push(e)
+    return { value: undefined } as never
+  })
   on('session.root', () => ({ value: 'C:\\work\\app' }) as never)
   on('clock.now', () => ({ value: 1_000 }))
   on('ui.copy', ($, e) => {
@@ -26,6 +30,9 @@ test('the note Claude sends shows in the pane, and Copy prompt copies it whole',
 
   const sent = await $.tool.call({ tool: 'mcp__context-handoff__handoff_note', note: NOTE } as never)
   expect(String((sent as { result?: unknown }).result)).toContain('Saved')
+
+  // Session-only: nothing lands in the cross-session store.
+  expect(stored).toEqual([])
 
   for (const surface of ['terminal', 'desktop'] as const) {
     copied.length = 0

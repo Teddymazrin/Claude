@@ -12,10 +12,6 @@ const TOOL_ID = `mcp__${PLUGIN}__${TOOL}`
 
 // Context percentages that each raise one warning per session.
 export const LEVELS = [70, 85] as const
-// A note older than this is not mentioned at session start.
-const FRESH_MS = 7 * 24 * 60 * 60 * 1000
-// Notes kept across sessions, one per project, newest first.
-export const KEEP = 20
 const SEND_DELAY_MS = 300
 
 // Palette: violet frame and title, amber for the project, slate buttons.
@@ -36,18 +32,8 @@ export const warningText = (percent: number, level: number) =>
     ? `Context ${percent}% full · run /${COMMAND} now, then copy the prompt and /clear`
     : `Context ${percent}% full · /${COMMAND} saves a handoff note before it fills`
 
-/** Whether two spellings name the same folder: slashes either way, any case (Windows paths). */
-export const sameRoot = (a: string, b: string) => {
-  const plain = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-  return plain(a) === plain(b)
-}
-
-/** `/handoff open` shows the saved note; anything else writes a fresh one. */
+/** `/handoff open` shows this session's note again; anything else writes a fresh one. */
 export const isOpen = (args: string) => /^\s*(open|show|view)\s*$/i.test(args)
-
-/** The kept notes with `fresh` in, replacing that project's last one, newest first. */
-export const kept = (notes: readonly Note[], fresh: Note) =>
-  [fresh, ...notes.filter(n => !sameRoot(n.root, fresh.root))].slice(0, KEEP)
 
 export const writePrompt = (root: string, when: string) =>
   [
@@ -72,20 +58,6 @@ export const copyPrompt = (text: string) =>
     '',
     text,
   ].join('\n')
-
-async function storedNotes($: EngineInterface): Promise<Note[]> {
-  const value = await $.store.get('notes')
-  return Array.isArray(value) ? (value as Note[]) : []
-}
-
-// The kept note for this project into state; false when there is none.
-async function load($: EngineInterface) {
-  const root = await $.session.root()
-  const found = (await storedNotes($)).find(n => sameRoot(n.root, root))
-  if (!found) return false
-  await update($, note, () => found)
-  return true
-}
 
 // The side pane when there is room; the box above the prompt otherwise, so it always shows.
 async function show($: EngineInterface, isAsked: boolean) {
@@ -142,15 +114,9 @@ export const register: Register = on => {
     })
     await $.command.register({
       name: COMMAND,
-      description: 'Write a handoff note for this project (`open` shows the saved one)',
+      description: 'Write a handoff note for this session (`open` shows it again)',
       argumentHint: '[open]',
     })
-    // Mention a recent note, so /clear or a new session can carry on from it.
-    const root = await $.session.root()
-    const found = (await storedNotes($)).find(n => sameRoot(n.root, root))
-    if (found && (await $.clock.now()) - found.at < FRESH_MS) {
-      $.ui.toast(`${TITLE}: a note is saved for this project · /${COMMAND} open to see it`, { timeoutMs: 8000 })
-    }
     return next(e)
   })
 
@@ -166,12 +132,11 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // Claude hands the note over: kept for this project, and shown.
+  // Claude hands the note over: held for this session only, and shown. Nothing is saved.
   on('tool.call', { tool: TOOL_ID }, async ($, e) => {
     const text = (e as unknown as { note?: unknown }).note
     if (typeof text !== 'string' || !text.trim()) return { result: 'Handoff note not saved: `note` is empty.', isError: true }
     const fresh: Note = { root: await $.session.root(), text: text.trim(), at: await $.clock.now() }
-    await $.store.set('notes', kept(await storedNotes($), fresh))
     await update($, note, () => fresh)
     await show($, false)
     return { result: `Saved; shown in the ${TITLE} pane. Reply with one short line, not the note.` }
@@ -179,9 +144,9 @@ export const register: Register = on => {
 
   on('command.run', { command: COMMAND }, async ($, e) => {
     if (isOpen(e.args)) {
-      if (!(await load($))) return { text: `${TITLE}: no note for this project yet · /${COMMAND} writes one` }
+      if (!(await read($, note))) return { text: `${TITLE}: no note in this session yet · /${COMMAND} writes one` }
       await show($, true)
-      return { text: `${TITLE}: opened the saved note` }
+      return { text: `${TITLE}: opened this session's note` }
     }
     const when = new Date(await $.clock.now()).toLocaleString()
     send($, writePrompt(await $.session.root(), when))
@@ -224,7 +189,7 @@ export const register: Register = on => {
         {children}
       </Box>
     )
-    if (!saved) return frame(<Text dimColor>{`No note yet. /${COMMAND} writes one for this project.`}</Text>)
+    if (!saved) return frame(<Text dimColor>{`No note yet. /${COMMAND} writes one for this session.`}</Text>)
     return frame([
       <Text key="root" color={AMBER} wrap="truncate-middle">{saved.root}</Text>,
       <Box key="actions" marginTop={1} marginBottom={1}>{buttons($, e, saved, false)}</Box>,

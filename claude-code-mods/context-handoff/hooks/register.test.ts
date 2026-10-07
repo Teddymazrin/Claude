@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { KEEP, LEVELS, copyPrompt, isOpen, kept, levelFor, sameRoot, warningText, writePrompt } from './register'
+import { LEVELS, copyPrompt, isOpen, levelFor, warningText, writePrompt } from './register'
 
 test('warns once at each level the context reaches', () => {
   expect(LEVELS).toEqual([70, 85])
@@ -16,22 +16,7 @@ test('gets more urgent at the last level', () => {
   expect(warningText(88, 85)).toBe('Context 88% full · run /handoff now, then copy the prompt and /clear')
 })
 
-test('knows a project whichever way its folder is spelled', () => {
-  expect(sameRoot('C:\\Users\\PC\\app', 'c:/users/pc/app/')).toBe(true)
-  expect(sameRoot('C:\\Users\\PC\\app', 'C:\\Users\\PC\\other')).toBe(false)
-})
-
-test('keeps one note per project, newest first, at most KEEP', () => {
-  const note = (root: string, at: number) => ({ root, text: `${root} ${at}`, at })
-  let notes = [note('C:\\a', 1), note('C:\\b', 2)]
-  notes = kept(notes, note('c:/a', 3))
-  expect(notes.map(n => n.text)).toEqual(['c:/a 3', 'C:\\b 2'])
-  for (let i = 0; i < KEEP + 5; i++) notes = kept(notes, note(`C:\\p${i}`, 10 + i))
-  expect(notes.length).toBe(KEEP)
-  expect(notes[0]?.root).toBe(`C:\\p${KEEP + 4}`)
-})
-
-test('opens the saved note only when asked to', () => {
+test('opens the note again only when asked to', () => {
   expect(isOpen('open')).toBe(true)
   expect(isOpen(' View ')).toBe(true)
   expect(isOpen('')).toBe(false)

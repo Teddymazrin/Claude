@@ -106,10 +106,9 @@ Commands are checked in both Bash and PowerShell. A blocked call tells Claude no
 Keeps a long session from losing its thread when the context window fills.
 
 - **Warnings:** a toast at 70% context full, and a more urgent one at 85%. Each shows once, and again after `/clear` or a compact brings the context back down
-- **`/handoff`:** Claude writes a handoff note for this project: the goal, what's done, what's in progress, next steps, key files, and decisions and gotchas. It goes straight to the Handoff pane; no file is written
+- **`/handoff`:** Claude writes a handoff note for this session: the goal, what's done, what's in progress, next steps, key files, and decisions and gotchas. It goes straight to the Handoff pane; no file is written
 - **The Handoff pane:** opens on the right with the note and one button, **⧉ Copy prompt**. It copies the whole note with a line asking Claude to sum up where things stand and wait for you to confirm the next step. In a narrow window a box above the prompt shows **⧉ Copy prompt** instead, plus **▸ Open** for the full note
-- **`/handoff open`:** shows the saved note again without writing a new one. The mod keeps the last note for each project (up to 20 projects), and a new note replaces the old one
-- **At session start:** when a note from the last 7 days exists for the project, a toast reminds you it's there
+- **`/handoff open`:** shows this session's note again without writing a new one. Notes are never saved: copy it before `/clear`, because a new session starts with none
 
 The usual flow is `/handoff`, then **⧉ Copy prompt**, then `/clear` (or **Clear** in Control Panel), then paste.
 
