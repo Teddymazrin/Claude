@@ -12,12 +12,24 @@ Mods for the Claude Code terminal by Teddymazrin, published as the `teddymazrin-
 
 ## Install
 
-At the Claude Code prompt, one line per mod. Answer `y` to add the marketplace, then press Enter for the user scope:
+Run these at the Claude Code prompt.
+
+### 1. Add the marketplace (one time)
 
 ```
-/plugin install bare-view --marketplace Teddymazrin/Claude
-/plugin install control-panel --marketplace Teddymazrin/Claude
-/plugin install action-steps --marketplace Teddymazrin/Claude
+/plugin marketplace add Teddymazrin/Claude
+```
+
+This registers the `teddymazrin-mods` marketplace with Claude Code. You only do it once; after that, installs and updates find it by name.
+
+### 2. Install the mods you want
+
+One line per mod. Press Enter for the user scope:
+
+```
+/plugin install bare-view@teddymazrin-mods
+/plugin install control-panel@teddymazrin-mods
+/plugin install action-steps@teddymazrin-mods
 ```
 
 ## Update

@@ -1,13 +1,23 @@
 # Claude Code mods
 
-Three mods for the Claude Code terminal. Install with one line at the Claude Code prompt, answer `y` to add the marketplace, then press Enter for the user scope.
+Three mods for the Claude Code terminal.
+
+## Before you install: add the marketplace (one time)
+
+At the Claude Code prompt, run this once:
+
+```
+/plugin marketplace add Teddymazrin/Claude
+```
+
+This registers the `teddymazrin-mods` marketplace. After that, each mod below installs with one line (press Enter for the user scope).
 
 ## Bare View
 
 A live task checklist above the prompt: the goal, a progress bar, each step and a timer. Tool calls and in-progress text are hidden so only the checklist and the final answer show. `/checklist` toggles the full view back on. A tally line counts the tool calls behind each prompt, naming each built-in tool and each MCP server, with the tool running right now on the right: `⚙ 4 tool calls · Built-in 3: Bash 2, Read 1 · MCP 1: microsoft-learn 1   ▶ Bash`.
 
 ```
-/plugin install bare-view --marketplace Teddymazrin/Claude
+/plugin install bare-view@teddymazrin-mods
 ```
 
 ## Control Panel
@@ -31,7 +41,7 @@ Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 - **Mods:** switch each of your installed mods on or off
 
 ```
-/plugin install control-panel --marketplace Teddymazrin/Claude
+/plugin install control-panel@teddymazrin-mods
 ```
 
 ## Action Steps
@@ -53,7 +63,7 @@ Check my Azure roles                       3 steps
 - Close it with ✕; it opens again the next time there are new steps
 
 ```
-/plugin install action-steps --marketplace Teddymazrin/Claude
+/plugin install action-steps@teddymazrin-mods
 ```
 
 ## Updating the mods
