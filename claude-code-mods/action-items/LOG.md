@@ -1,5 +1,17 @@
 # Action Items log
 
+## 5.0.1 (2026-10-09)
+
+**Found in testing:** 13 sample replies run through the 5.0.0 shape check gave 4 false alarms. Picked: fix all four.
+
+**Changed:**
+- A numbered list of questions no longer shows up in the box twice. The questions stay as questions and aren't added again as actions
+- Numbered items that open with a bold title ("1. **Option A.** …") are treated as options or points, not steps
+- Numbered statements ("1. The engine loads…", "2. Each hook runs…") are treated as an explanation, not steps
+- A code block with no language that opens like data (`{`, `[`, `<` or a quote) isn't turned into "Run this command". One that reads like a command still is
+- One item that isn't a step makes the whole list not steps, as with past-tense reports already
+- Still not caught: bulleted steps and steps written in a sentence (the instruction covers those)
+
 ## 5.0.0 (2026-10-09)
 
 **Asked for:** stop adding verbs to the word lists; find a way to catch steps left out of the box that doesn't cost many tokens. Picked: a shape check that fills the box, plus a stricter instruction.

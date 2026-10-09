@@ -235,22 +235,28 @@ export const findQuestions = (answer: string): string[] => {
 // Fences a command sits in; a block in any other language is code to read, not to run.
 const SHELL = /^(?:powershell|pwsh|ps1?|bash|sh|zsh|shell|console|cmd|bat)?$/i
 const RUN_THIS = 'Run this command'
+// An unlabelled block that opens like data (JSON, XML, a quoted string) is to read, not run.
+const DATA = /^[{[<"']/
+// A list item that is not a step: a report ("Fixed the bug"), a bold title ("**Tests:** …", "**Option A.** …"),
+// a question, or a statement ("The engine loads…", "Each hook runs…").
+const NOT_STEP = /^\w+ed\b|^(?:the|a|an|this|that|these|those|each|every|it|its|they|there|we|i|our|your|my)\b/i
 
 /**
  * The steps a reply leaves the user, by its shape rather than its words: each numbered item, with the
  * shell block straight under it as its command, and a shell block under no item as an action of its own.
- * A report ("1. Fixed the bug") or a labelled point ("1. **Tests:** …") is not a step.
+ * One item that is not a step makes its whole reply's list not steps.
  */
 export const findActions = (answer: string): Action[] => {
   const actions: Action[] = []
   // An item a shell block can still attach to: no prose since it.
   let open: Action | null = null
-  let isReport = false
+  let isNotSteps = false
   for (const part of answer.split(/(```[^\n]*\n[\s\S]*?```)/)) {
     const fence = part.match(/^```([^\n]*)\n([\s\S]*?)```$/)
     if (fence) {
+      const lang = fence[1]!.trim()
       const command = fence[2]!.trim()
-      if (command && SHELL.test(fence[1]!.trim())) {
+      if (command && SHELL.test(lang) && !(lang === '' && DATA.test(command))) {
         if (open && !open.command) open.command = command
         else actions.push({ kind: 'do', text: RUN_THIS, command, isDone: false })
       }
@@ -265,9 +271,8 @@ export const findActions = (answer: string): Action[] => {
         continue
       }
       const text = unmark(item[1]!)
-      // One reported item ("Fixed the bug") makes the whole list a report, "Read the config" included.
-      if (!text || /^\*\*[^*]+:\*\*/.test(item[1]!) || /^\w+ed\b/i.test(text)) {
-        isReport = true
+      if (!text || item[1]!.startsWith('**') || text.endsWith('?') || NOT_STEP.test(text)) {
+        isNotSteps = true
         open = null
         continue
       }
@@ -275,7 +280,7 @@ export const findActions = (answer: string): Action[] => {
       actions.push(open)
     }
   }
-  return (isReport ? actions.filter(a => a.text === RUN_THIS) : actions).slice(0, KEEP)
+  return (isNotSteps ? actions.filter(a => a.text === RUN_THIS) : actions).slice(0, KEEP)
 }
 
 // Every change goes to the session's state (redraws the box) and the store (kept across sessions).

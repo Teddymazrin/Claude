@@ -84,6 +84,13 @@ test('takes the steps a reply leaves the user from its shape, not its words', ()
   expect(findActions('1. Read the config\n2. Fixed the bug')).toEqual([])
   expect(findActions('1. **Validate:** ran on each mod\n2. **Tests:** all pass')).toEqual([])
   expect(findActions('Here it is:\n\n```ts\nconst x = 1\n```')).toEqual([])
+  // Questions (the question check has them), bold-titled options, statements and unlabelled data.
+  expect(findActions('Two things:\n\n1. Which region?\n2. Keep the old name?')).toEqual([])
+  expect(findActions('1. **Shape check (free).** Reads the shape.\n2. **Haiku check.** Small cost.')).toEqual([])
+  expect(findActions('1. The engine loads the module\n2. Each hook runs in order')).toEqual([])
+  expect(findActions('Config:\n\n```\n{ "a": 1 }\n```')).toEqual([])
+  // An unlabelled block that reads as a command still counts.
+  expect(texts('Then:\n\n```\naz login\n```')).toEqual([['Run this command', 'az login']])
   expect(findActions('The fix is in `register.tsx:689`.')).toEqual([])
   expect(findActions('')).toEqual([])
 })
