@@ -1,5 +1,11 @@
 # Bare View log
 
+## 1.8.2 (2026-10-09)
+
+**Asked for:** idea 5 from the visual polish list: mark failed steps.
+
+**Changed:** a step with any failed tool call shows a pink `✗` in place of its bullet (`✓`, `●` or `○`), so a failure shows without opening the step's peek. Its status word (Done, Working) is unchanged.
+
 ## 1.8.1 (2026-10-09)
 
 **Asked for:** the activity row showed a hint of the line being run (`Running Bash  git status`); don't show that line.

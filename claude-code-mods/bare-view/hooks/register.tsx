@@ -732,8 +732,9 @@ export const register: Register = on => {
             return (
               <Box key={`step-${i}`} flexDirection="column">
                 <Box flexDirection="row">
-                  <Text color={step.status === 'done' ? GREEN_TO : isActive ? PINK : undefined} dimColor={step.status === 'todo'}>
-                    {step.status === 'done' ? '✓ ' : isActive ? '● ' : '○ '}
+                  {/* A step with a failed call is marked on its bullet, not only in its count. */}
+                  <Text color={failed > 0 ? PINK : step.status === 'done' ? GREEN_TO : isActive ? PINK : undefined} dimColor={failed === 0 && step.status === 'todo'}>
+                    {failed > 0 ? '✗ ' : step.status === 'done' ? '✓ ' : isActive ? '● ' : '○ '}
                   </Text>
                   {calls.length > 0 ? (
                     // A step with calls is a button: press it to peek at them.

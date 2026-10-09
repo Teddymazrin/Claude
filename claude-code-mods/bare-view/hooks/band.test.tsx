@@ -65,6 +65,8 @@ test('pressing a step peeks at its tool calls, and again hides them', async ($, 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND } as never)
     expect(await ui.find({ type: 'Text', text: /git status/ })).toBeFalsy()
+    // The step with the failed Read is marked on its bullet before any peek.
+    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeTruthy()
     await ui.press({ key: 'peek-0' })
     expect(await ui.find({ type: 'Text', text: /git status/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /missing\.md/ })).toBeTruthy()
