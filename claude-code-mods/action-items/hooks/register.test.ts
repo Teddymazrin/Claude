@@ -89,6 +89,11 @@ test('takes the steps a reply leaves the user from its shape, not its words', ()
   expect(findActions('1. **Shape check (free).** Reads the shape.\n2. **Haiku check.** Small cost.')).toEqual([])
   expect(findActions('1. The engine loads the module\n2. Each hook runs in order')).toEqual([])
   expect(findActions('Config:\n\n```\n{ "a": 1 }\n```')).toEqual([])
+  // The line introducing a list or block becomes each action's why; a plain sentence does not.
+  const whys = (s: string) => findActions(s).map(x => x.why)
+  expect(whys('To clear the old versions:\n\n1. Close Claude Code\n2. Open PowerShell')).toEqual(['To clear the old versions', 'To clear the old versions'])
+  expect(whys('Done.\n\nTo check the installed version yourself:\n\n```powershell\nGet-ChildItem x\n```')).toEqual(['To check the installed version yourself'])
+  expect(whys('All set.\n\n1. Close Claude Code')).toEqual([undefined])
   // An unlabelled block that reads as a command still counts.
   expect(texts('Then:\n\n```\naz login\n```')).toEqual([['Run this command', 'az login']])
   expect(findActions('The fix is in `register.tsx:689`.')).toEqual([])

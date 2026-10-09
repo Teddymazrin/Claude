@@ -6,7 +6,7 @@ Six mods for Claude Code. They work in the terminal and in the desktop app's Cod
 | --- | --- | --- |
 | [Bare View](#bare-view) | 1.11.0 | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.8.1 | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Action Items](#action-items) | 5.0.1 | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
+| [Action Items](#action-items) | 5.1.0 | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | 1.3.0 | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
 | [Context Lens](#context-lens) | 1.1.0 | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |

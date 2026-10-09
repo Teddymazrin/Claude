@@ -1,5 +1,14 @@
 # Action Items log
 
+## 5.1.0 (2026-10-09)
+
+**Asked for:** actions the mod copies out of Claude's reply had nothing behind **▸ info**. Picked: use the line that introduces them, for free.
+
+**Changed:**
+- The sentence just before a numbered list or command block, when it ends with a colon ("To check the installed version yourself:"), becomes the **Why** of each action under it
+- A plain sentence ("All set.") or a heading isn't used, so those actions still have no info
+- Still no model call: the mod copies the line from the reply
+
 ## 5.0.1 (2026-10-09)
 
 **Found in testing:** 13 sample replies run through the 5.0.0 shape check gave 4 false alarms. Picked: fix all four.

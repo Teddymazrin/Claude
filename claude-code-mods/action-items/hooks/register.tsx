@@ -244,13 +244,17 @@ const NOT_STEP = /^\w+ed\b|^(?:the|a|an|this|that|these|those|each|every|it|its|
 /**
  * The steps a reply leaves the user, by its shape rather than its words: each numbered item, with the
  * shell block straight under it as its command, and a shell block under no item as an action of its own.
- * One item that is not a step makes its whole reply's list not steps.
+ * One item that is not a step makes its whole reply's list not steps. The line that introduces a list or
+ * block ("To check the version:") becomes each action's why.
  */
 export const findActions = (answer: string): Action[] => {
   const actions: Action[] = []
   // An item a shell block can still attach to: no prose since it.
   let open: Action | null = null
   let isNotSteps = false
+  // The prose line just before, when it introduces what follows (ends with a colon).
+  let lead: string | undefined
+  const withWhy = (a: Action): Action => (lead ? { ...a, why: lead } : a)
   for (const part of answer.split(/(```[^\n]*\n[\s\S]*?```)/)) {
     const fence = part.match(/^```([^\n]*)\n([\s\S]*?)```$/)
     if (fence) {
@@ -258,9 +262,10 @@ export const findActions = (answer: string): Action[] => {
       const command = fence[2]!.trim()
       if (command && SHELL.test(lang) && !(lang === '' && DATA.test(command))) {
         if (open && !open.command) open.command = command
-        else actions.push({ kind: 'do', text: RUN_THIS, command, isDone: false })
+        else actions.push(withWhy({ kind: 'do', text: RUN_THIS, command, isDone: false }))
       }
       open = null
+      lead = undefined
       continue
     }
     for (const line of part.split('\n')) {
@@ -268,6 +273,8 @@ export const findActions = (answer: string): Action[] => {
       const item = line.match(/^\s*\d+[.)]\s+(.*)$/)
       if (!item) {
         open = null
+        const prose = unmark(line)
+        lead = prose.endsWith(':') && !prose.startsWith('#') ? prose.slice(0, -1).trim() || undefined : undefined
         continue
       }
       const text = unmark(item[1]!)
@@ -276,7 +283,7 @@ export const findActions = (answer: string): Action[] => {
         open = null
         continue
       }
-      open = { kind: 'do', text, isDone: false }
+      open = withWhy({ kind: 'do', text, isDone: false })
       actions.push(open)
     }
   }
