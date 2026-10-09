@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, addCall, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyGroups, toolLabel } from './register'
+import { PEEK_MAX, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyGroups, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -161,4 +161,32 @@ test('a peeked call shows how long it took and the first line it returned', () =
   const list = addCall({ goal: 'g', steps: [{ text: 'A', status: 'active' }] }, { id: 'c1', tool: 'Bash', detail: 'ls' })
   const ended = endCall(list, 'c1', { isError: false, ms: 120, preview: 'a.txt' })
   expect(ended.steps[0]?.calls?.[0]).toEqual({ id: 'c1', tool: 'Bash', detail: 'ls', isError: false, ms: 120, preview: 'a.txt' })
+})
+
+test('names the phase of each piece of a reply, and words the activity row', () => {
+  expect(chunkPhase('thinking')).toBe('thinking')
+  expect(chunkPhase('text')).toBe('writing')
+  expect(chunkPhase('tool')).toBe('calling')
+  expect(chunkPhase('input')).toBeUndefined()
+  expect(chunkPhase('stop')).toBeUndefined()
+  expect(activityLine({ phase: 'thinking', since: 0 }, 6_000)).toEqual({ verb: 'Thinking', took: '6s' })
+  expect(activityLine({ phase: 'calling', since: 0, tool: 'Edit' }, 500).verb).toBe('Starting Edit')
+  expect(activityLine({ phase: 'running', since: 0, tool: 'Bash', agents: 2 }, 65_000)).toEqual({
+    verb: 'Running Bash',
+    took: '1m 05s · 2 agents working',
+  })
+  expect(activityLine({ phase: 'waiting', since: 0, agents: 1 }, 0)).toEqual({ verb: 'Waiting for the model', took: '0s · 1 agent working' })
+})
+
+test('words the approval wait, and folds a finished checklist into one line', () => {
+  expect(activityLine({ phase: 'approval', since: 0, tool: 'Edit' }, 3_000)).toEqual({
+    verb: 'Waiting for you to approve Edit',
+    took: '3s',
+  })
+  const steps = [
+    { text: 'A', status: 'done' as const, calls: [{ id: '1', tool: 'Bash', detail: 'ls' }, { id: '2', tool: 'Read', detail: 'x', isError: true }] },
+    { text: 'B', status: 'done' as const },
+  ]
+  expect(foldedLine({ goal: 'G', steps, tally: { total: 2, mcp: {} } }, '2m 13s')).toBe('All 2 done · 2m 13s · 2 tool calls · 1 failed')
+  expect(foldedLine({ goal: 'G', steps: [{ text: 'A', status: 'done' }] }, '4s')).toBe('All 1 done · 4s')
 })

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Call, Checklist, Step, StepStatus, Tally, TallyKey } from '../types'
+import type { Activity, Call, Checklist, Phase, Step, StepStatus, Tally, TallyKey } from '../types'
 
 const PLUGIN = 'bare-view'
 const TOOL = 'checklist'
@@ -13,6 +13,8 @@ const checklist = atom({ plugin: 'bare-view', key: 'checklist' } as const, null)
 const showTools = atom({ plugin: 'bare-view', key: 'showTools' } as const, false)
 const peek = atom({ plugin: 'bare-view', key: 'peek' } as const, null)
 const openTally = atom({ plugin: 'bare-view', key: 'openTally' } as const, [] as TallyKey[])
+const activity = atom({ plugin: 'bare-view', key: 'activity' } as const, null as Activity | null)
+const unfolded = atom({ plugin: 'bare-view', key: 'unfolded' } as const, false)
 
 // Palette, after the reference: pink frame, orange-to-pink progress, green done, violet working.
 const FRAME = '#e0457b'
@@ -234,6 +236,45 @@ export const statusWord = (steps: readonly Step[], index: number) => {
   return index === firstTodo ? 'Next' : 'Up next'
 }
 
+/** The phase a piece of the model's reply puts the activity row in; undefined for a piece that changes nothing. */
+export const chunkPhase = (kind: string): Phase | undefined =>
+  kind === 'thinking' ? 'thinking' : kind === 'text' ? 'writing' : kind === 'tool' ? 'calling' : undefined
+
+/** The activity row's words: what is happening and for how long. The tool is named, not what it runs. */
+export const activityLine = (act: Activity, now: number) => {
+  const verb =
+    act.phase === 'thinking'
+      ? 'Thinking'
+      : act.phase === 'writing'
+        ? 'Writing'
+        : act.phase === 'calling'
+          ? `Starting ${act.tool ?? 'a tool'}`
+          : act.phase === 'running'
+            ? `Running ${act.tool ?? 'a tool'}`
+            : act.phase === 'approval'
+              ? `Waiting for you to approve ${act.tool ?? 'a tool'}`
+              : 'Waiting for the model'
+  const agents = act.agents ? ` · ${act.agents} agent${act.agents === 1 ? '' : 's'} working` : ''
+  return { verb, took: `${elapsed(now - act.since)}${agents}` }
+}
+
+/** A finished checklist in one line: "All 4 done · 2m 13s · 14 tool calls · 1 failed". */
+export const foldedLine = (list: Checklist, timer: string) => {
+  const calls = [...(list.early ?? []), ...list.steps.flatMap(s => s.calls ?? [])]
+  const failed = calls.filter(c => c.isError).length
+  const total = list.tally?.total ?? calls.length
+  return [
+    `All ${list.steps.length} done`,
+    timer,
+    total > 0 ? `${total} tool call${total === 1 ? '' : 's'}` : '',
+    failed > 0 ? `${failed} failed` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+const SPINNER = ['◐', '◓', '◑', '◒']
+
 // Messages (by id) drawn while a checklist was open stay hidden after it closes.
 // A module value: a render hook may not write state, and a reload only shows them again.
 const muted = new Set<string>()
@@ -241,14 +282,29 @@ const muted = new Set<string>()
 // Ids for calls that arrive without a tool_use_id.
 let callNo = 0
 
-// Redraws the band once a second while a checklist is open, for the timer and
-// the working shimmer.
+// The goal a slash command's turn shows: its prompt starts no checklist, its turn does.
+let pendingGoal: string | undefined
+
+// The main loop's tool calls still running, oldest first, for the activity row.
+const runningCalls = new Map<string, string>()
+
+// Subagents mid-request, by id, each with how many of its requests are open.
+const stepping = new Map<string, number>()
+
+/** Puts the activity row in a new phase, keeping the subagent count. */
+const setActivity = async ($: EngineInterface, act: Omit<Activity, 'since' | 'agents'>) => {
+  const since = await $.clock.now()
+  await update($, activity, () => ({ ...act, since, ...(stepping.size > 0 ? { agents: stepping.size } : {}) }))
+}
+
+// Redraws the band once a second while a checklist is open or the model is at
+// work, for the timers and the working shimmer.
 let isTicking = false
 async function tick($: EngineInterface) {
   if (isTicking) return
   isTicking = true
   try {
-    while (isInProgress(await read($, checklist))) {
+    while (isInProgress(await read($, checklist)) || (await read($, activity)) !== null) {
       await $.clock.sleep(1000)
       $.ui.invalidate('ui.render')
     }
@@ -307,13 +363,92 @@ export const register: Register = on => {
   // is deferred, so the reminder also says how to load it.
   on('prompt.submit', async ($, e, next) => {
     const goal = firstLine(e.text)
-    if (!goal || goal.startsWith('/')) return next(e)
+    if (!goal) return next(e)
+    // A slash command's turn (if it starts one) shows the command as its goal.
+    pendingGoal = goal.startsWith('/') ? goal : undefined
+    if (pendingGoal) return next(e)
     const startedAt = await $.clock.now()
     await update($, checklist, () => ({ goal, steps: [], startedAt }))
     await update($, peek, () => null)
     await update($, openTally, () => [])
+    await update($, unfolded, () => false)
     return next({ ...e, context: [...(e.context ?? []), REMINDER] })
   }).catch(($, e, next) => next(e))
+
+  // Every turn shows something. A typed prompt already reset the band; a slash
+  // command's turn, or one the session starts itself (a background task ended,
+  // a wake-up), gets a fresh band here so it never reads as idle.
+  on('turn.start', async ($, e, next) => {
+    const goal = pendingGoal ?? (e.text.trim() ? undefined : 'Continuing')
+    pendingGoal = undefined
+    runningCalls.clear()
+    if (goal) {
+      const startedAt = await $.clock.now()
+      await update($, checklist, () => ({ goal, steps: [], startedAt }))
+      await update($, peek, () => null)
+      await update($, openTally, () => [])
+      await update($, unfolded, () => false)
+    }
+    await setActivity($, { phase: 'waiting' })
+    void tick($).catch(() => {})
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // Follow each model request as it streams: thinking, writing, starting a tool
+  // call. Only a change of phase is written, not every piece. A subagent's
+  // requests count it as working instead.
+  on('turn.step', async function* ($, e, next) {
+    const stream = next(e)
+    const agent = e.agentId
+    if (agent !== undefined) {
+      stepping.set(agent, (stepping.get(agent) ?? 0) + 1)
+      const showAgents = () =>
+        update($, activity, cur => (cur === null ? cur : { ...cur, agents: stepping.size })).catch(() => {})
+      await showAgents()
+      try {
+        for await (const chunk of stream) yield chunk
+        return await stream.result
+      } finally {
+        const open = (stepping.get(agent) ?? 1) - 1
+        if (open > 0) stepping.set(agent, open)
+        else stepping.delete(agent)
+        await showAgents()
+      }
+    }
+    await setActivity($, { phase: 'waiting' }).catch(() => {})
+    void tick($).catch(() => {})
+    let last: Phase = 'waiting'
+    for await (const chunk of stream) {
+      const phase = chunkPhase(chunk.kind)
+      if (phase !== undefined && (phase !== last || chunk.kind === 'tool')) {
+        last = phase
+        const tool = chunk.kind === 'tool' ? { tool: toolLabel(chunk.name) } : {}
+        await setActivity($, { phase, ...tool }).catch(() => {})
+      }
+      yield chunk
+    }
+    return await stream.result
+  })
+
+  // The permission dialog is about to show: the call is waiting on the person,
+  // not running. Only observed; the decision is left to the dialog. The engine
+  // says nothing when the person answers, so the row stays on it until the call
+  // ends or another starts.
+  on('classic.PermissionRequest', async ($, e, next) => {
+    if (e.agent_id === undefined) {
+      const tool = toolLabel(e.tool_name)
+      await setActivity($, { phase: 'approval', tool }).catch(() => {})
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      runningCalls.clear()
+      await update($, activity, () => null).catch(() => {})
+    }
+    return next(e)
+  })
 
   on('tool.call', { tool: TOOL_ID }, async ($, e) => {
     const parsed = parseChecklist(e as unknown as Record<string, unknown>)
@@ -340,6 +475,12 @@ export const register: Register = on => {
       detail: callDetail(e.tool, e as unknown as Record<string, unknown>),
     }
     await update($, checklist, cur => (cur === null ? cur : { ...addCall(cur, call), tally: countCall(cur.tally, e.tool) })).catch(() => {})
+    // The main loop's call shows on the activity row while it runs; a subagent's does not.
+    const isMain = e.agentId === undefined
+    if (isMain) {
+      runningCalls.set(call.id, call.tool)
+      await setActivity($, { phase: 'running', tool: call.tool }).catch(() => {})
+    }
     const startedAt = await $.clock.now()
     let end: Pick<Call, 'isError' | 'ms' | 'preview'> = { isError: true }
     try {
@@ -351,6 +492,11 @@ export const register: Register = on => {
       await update($, checklist, cur =>
         cur === null ? cur : { ...endCall(cur, call.id, { ...end, ms }), tally: finishCall(cur.tally, e.tool) },
       ).catch(() => {})
+      // Back to the newest call still running, else waiting for the model to read the results.
+      if (isMain && runningCalls.delete(call.id)) {
+        const still = [...runningCalls.values()].at(-1)
+        await setActivity($, still ? { phase: 'running', tool: still } : { phase: 'waiting' }).catch(() => {})
+      }
     }
   })
 
@@ -391,8 +537,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     // Draw whatever other plugins put in the band too, so they can share it.
     const below = await next(e)
-    const list = await read($, checklist)
-    if (e.props.hasSurvey || list === null) return below
+    const act = e.props.isWorking ? await read($, activity) : null
+    const saved = await read($, checklist)
+    if (e.props.hasSurvey || (saved === null && act === null)) return below
+    // Work with no checklist behind it still gets a band, for the activity row.
+    const list: Checklist = saved ?? { goal: 'Working', steps: [] }
 
     const { Box, Text, Button } = $.ui.resolve(e)
     const peeked = await read($, peek)
@@ -412,8 +561,48 @@ export const register: Register = on => {
     const barW = Math.max(8, inner - labelW - pctText.length - 1)
     const filled = total === 0 ? 0 : Math.round((done / total) * barW)
 
-    // The tool running right now sits at the right end of the tally row, while a turn is going.
-    const running = e.props.isWorking && list.tally?.running ? `▶ ${fit(list.tally.running, 40).trimEnd()}` : ''
+    // What the model is doing right now, while a turn is going: its own row, under the bar.
+    const line = act === null ? null : activityLine(act, now)
+    const phaseColor =
+      act?.phase === 'thinking'
+        ? VIOLET_TO
+        : act?.phase === 'writing'
+          ? PINK
+          : act?.phase === 'approval'
+            ? ORANGE
+            : act?.phase === 'waiting'
+              ? undefined
+              : BLUE
+    const activityRow = line ? (
+      <Box flexDirection="row" justifyContent="space-between">
+        <Text>
+          <Text color={act?.phase === 'approval' ? ORANGE : VIOLET_TO}>{act?.phase === 'approval' ? '⏸ ' : `${SPINNER[tickNo % SPINNER.length]} `}</Text>
+          <Text bold color={phaseColor} dimColor={phaseColor === undefined}>
+            {line.verb}
+          </Text>
+        </Text>
+        <Text dimColor>{line.took}</Text>
+      </Box>
+    ) : null
+
+    // A finished checklist folds to one line; pressed, it opens out in full.
+    const isOpen = await read($, unfolded)
+    if (isFinished && !isOpen) {
+      const summary = `${foldedLine(list, timer)} ▸`
+      return (
+        <Box flexDirection="column">
+          <Box flexDirection="column" borderStyle="round" borderColor={FRAME} paddingX={1}>
+            <Box key="folded" flexDirection="row">
+              <Text color={GREEN_TO}>✓ </Text>
+              <Button key="unfold" plain label={summary} hover={{ bold: true }} onPress={() => update($, unfolded, () => true)} />
+              <Text dimColor>{fit(`  ${list.goal}`, Math.max(0, inner - 2 - summary.length)).trimEnd()}</Text>
+            </Box>
+            {activityRow}
+          </Box>
+          {below}
+        </Box>
+      )
+    }
 
     const textW = Math.max(16, Math.min(44, Math.floor(inner * 0.4)))
     const miniW = 12
@@ -464,9 +653,15 @@ export const register: Register = on => {
           </Box>
 
           <Box flexDirection="row">
-            <Text dimColor={total === 0} color={isFinished ? GREEN_TO : undefined}>
-              {fit(label, labelW)}
-            </Text>
+            {isFinished ? (
+              // Opened out, the finished label folds it back to one line.
+              <Box key="fold-label" flexDirection="row">
+                <Text color={GREEN_TO}>▾ </Text>
+                <Button key="fold" plain label={fit(label, labelW - 2)} hover={{ bold: true }} onPress={() => update($, unfolded, () => false)} />
+              </Box>
+            ) : (
+              <Text dimColor={total === 0}>{fit(label, labelW)}</Text>
+            )}
             <Text>
               {cells(filled, i => mix(ORANGE, PINK, filled <= 1 ? 1 : i / (filled - 1)))}
               <Text color={TRACK}>{'█'.repeat(barW - filled)}</Text>
@@ -476,6 +671,8 @@ export const register: Register = on => {
               {pctText}
             </Text>
           </Box>
+
+          {activityRow}
 
           {list.tally && list.tally.total > 0 ? (
             <Box flexDirection="column">
@@ -508,7 +705,6 @@ export const register: Register = on => {
                     )
                   })}
                 </Box>
-                {running ? <Text color={VIOLET_TO}>{running}</Text> : null}
               </Box>
               {groups
                 .filter(g => opened.includes(g.key) && g.tools.length > 0)

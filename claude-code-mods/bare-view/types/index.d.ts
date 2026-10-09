@@ -11,6 +11,10 @@ export type Tally = { total: number; mcp: Record<string, number>; builtIn?: Reco
 export type TallyKey = 'builtIn' | 'mcp'
 /** `early` holds calls made before the plan arrived; they join its first step. */
 export type Checklist = { goal: string; steps: Step[]; startedAt?: number; finishedAt?: number; tally?: Tally; early?: Call[] }
+/** What the model is doing right now: waiting on a reply, thinking, writing, starting a tool call, a tool running, or a tool waiting on the person's approval. */
+export type Phase = 'waiting' | 'thinking' | 'writing' | 'calling' | 'running' | 'approval'
+/** The activity row: the main loop's phase since `since`, the tool it is about, and how many subagents are mid-request. */
+export type Activity = { phase: Phase; since: number; tool?: string; agents?: number }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -21,6 +25,10 @@ declare module 'claude-code' {
       peek: number | null
       /** The tally groups expanded to list their tools. */
       openTally: TallyKey[]
+      /** What the model is doing this moment; null between turns. */
+      activity: Activity | null
+      /** True when a finished checklist is opened out in full; finished, it folds to one line. */
+      unfolded: boolean
     }
   }
 }
