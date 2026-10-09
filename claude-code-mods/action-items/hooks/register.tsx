@@ -48,6 +48,7 @@ The user keeps an Action Items box above the prompt for everything you need from
 - One call per turn with a short \`title\` (the task), all decisions and actions together.
 - When the user answers a waiting question by typing instead of clicking, you're told which are still open: call the tool with that \`title\` and \`answered\` (the questions' numbers) to clear them.
 - Then keep your final answer short: say what you did and that what you need is in the box. Don't repeat the options or the steps.
+- Steps or commands for the user go in the box, never only in your reply.
 - A question asked with AskUserQuestion mid-task does not need to go in the box too.
 - Skip it only when you need nothing from the user.`
 
@@ -231,23 +232,51 @@ export const findQuestions = (answer: string): string[] => {
     .map(s => (s.length > 160 ? `${s.slice(0, 157)}...` : s))
 }
 
-// A line that hands the user something to do: "Run it with…", "1. Paste this…", "On your desktop, right-click…", "You'll need to sign in…".
-const TO_DO = 'run|execute|paste|type|restart|reload|sign in|log in|right-click|double-click|click|open|choose|select|press'
-const TO_RUN = new RegExp(
-  `(?:^|[.!:,]\\s+)(?:then\\s+|first\\s+|next\\s+)?(?:${TO_DO})\\b|\\byou(?:'ll| will)? (?:need to|have to|should|can now) (?:${TO_DO})\\b`,
-  'im',
-)
+// Fences a command sits in; a block in any other language is code to read, not to run.
+const SHELL = /^(?:powershell|pwsh|ps1?|bash|sh|zsh|shell|console|cmd|bat)?$/i
+const RUN_THIS = 'Run this command'
 
-/** Whether a reply hands the user steps to do themselves: a command shown or a numbered list of steps, and a line telling them to do something. */
-export const findsToRun = (answer: string): boolean => {
-  const hasCommand = /```[\s\S]*?```|`[^`\n]+`/.test(answer)
-  const lines = answer.replace(/```[\s\S]*?```/g, '').split('\n')
-  const hasSteps = lines.filter(l => /^\s*\d+[.)]\s+/.test(l)).length >= 2
-  const prose = lines.map(unmark).join('\n')
-  return (hasCommand || hasSteps) && TO_RUN.test(prose)
+/**
+ * The steps a reply leaves the user, by its shape rather than its words: each numbered item, with the
+ * shell block straight under it as its command, and a shell block under no item as an action of its own.
+ * A report ("1. Fixed the bug") or a labelled point ("1. **Tests:** …") is not a step.
+ */
+export const findActions = (answer: string): Action[] => {
+  const actions: Action[] = []
+  // An item a shell block can still attach to: no prose since it.
+  let open: Action | null = null
+  let isReport = false
+  for (const part of answer.split(/(```[^\n]*\n[\s\S]*?```)/)) {
+    const fence = part.match(/^```([^\n]*)\n([\s\S]*?)```$/)
+    if (fence) {
+      const command = fence[2]!.trim()
+      if (command && SHELL.test(fence[1]!.trim())) {
+        if (open && !open.command) open.command = command
+        else actions.push({ kind: 'do', text: RUN_THIS, command, isDone: false })
+      }
+      open = null
+      continue
+    }
+    for (const line of part.split('\n')) {
+      if (!line.trim()) continue
+      const item = line.match(/^\s*\d+[.)]\s+(.*)$/)
+      if (!item) {
+        open = null
+        continue
+      }
+      const text = unmark(item[1]!)
+      // One reported item ("Fixed the bug") makes the whole list a report, "Read the config" included.
+      if (!text || /^\*\*[^*]+:\*\*/.test(item[1]!) || /^\w+ed\b/i.test(text)) {
+        isReport = true
+        open = null
+        continue
+      }
+      open = { kind: 'do', text, isDone: false }
+      actions.push(open)
+    }
+  }
+  return (isReport ? actions.filter(a => a.text === RUN_THIS) : actions).slice(0, KEEP)
 }
-
-export const NUDGE = `[Action Items] Your reply tells the user to run something, but you didn't call ${TOOL_ID} this turn. Call it now with those steps as \`actions\` (text, why, command), then end with one short line pointing to the box.`
 
 // Every change goes to the session's state (redraws the box) and the store (kept across sessions).
 async function save($: EngineInterface, fn: (list: StepSet[]) => StepSet[]) {
@@ -568,24 +597,19 @@ export const register: Register = on => {
     return { result: `Shown in the Action Items box above the prompt (${countText(parsed)}). Tell the user it is there instead of repeating it.${clicks}` }
   })
 
-  // The other safety net: a reply that hands the user commands to run, with nothing in the box,
-  // sends Claude back once to put them there. Once only: a second stop goes through.
-  on('classic.Stop', async ($, e, next) => {
-    const done = await next(e)
-    if (done.block || e.stop_hook_active || isAskedThisTurn) return done
-    if (!findsToRun(e.last_assistant_message ?? '')) return done
-    return { ...done, block: NUDGE }
-  }).catch(($, e, next) => next(e))
-
-  // The safety net: a reply that ends asking something, with nothing put in the box, gets its questions put there.
+  // The safety net, free of tokens: a reply with nothing put in the box gets its questions, numbered
+  // steps and commands put there by the mod itself.
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
     if (e.reason !== 'answer' || e.agentId || isAskedThisTurn) return done
-    const questions = findQuestions(e.answer)
-    if (questions.length === 0) return done
+    const items: Item[] = [
+      ...findQuestions(e.answer).map((text): Item => ({ kind: 'decide', text, options: [] })),
+      ...findActions(e.answer),
+    ]
+    if (items.length === 0) return done
     const now = await $.clock.now()
-    const items: Item[] = questions.map(text => ({ kind: 'decide', text, options: [] }))
-    await show($, { id: String(now), title: 'Claude asked', items, at: now })
+    const title = items.some(i => i.kind === 'do') ? "From Claude's reply" : 'Claude asked'
+    await show($, { id: String(now), title, items, at: now })
     return done
   }).catch(($, e, next) => next(e))
 

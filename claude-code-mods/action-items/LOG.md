@@ -1,5 +1,16 @@
 # Action Items log
 
+## 5.0.0 (2026-10-09)
+
+**Asked for:** stop adding verbs to the word lists; find a way to catch steps left out of the box that doesn't cost many tokens. Picked: a shape check that fills the box, plus a stricter instruction.
+
+**Changed:**
+- When Claude ends a turn without using the box, the mod reads the reply's shape instead of its words. Each numbered item becomes an action, a shell block straight under an item becomes its command, and a shell block on its own becomes "Run this command". They go straight into the box under "From Claude's reply", with the questions it already caught
+- No model call and no extra turn: the check runs inside the mod. The "send Claude back" nudge from 4.4.0 and its word lists are gone, so each catch no longer costs a full extra turn
+- A list that reports what was done ("1. Fixed the bug"), labelled points ("1. **Tests:** all pass") and code blocks in other languages are left alone
+- New instruction line: steps or commands for the user go in the box, never only in the reply (about 16 tokens, cached)
+- Not caught: steps written as a plain sentence with no list or command block. The instruction covers those
+
 ## 4.6.0 (2026-10-09)
 
 **Asked for:** Claude gave numbered "right-click, choose Run with PowerShell" steps and a command, but the box stayed empty and the safety net didn't catch it. Picked: widen the net.

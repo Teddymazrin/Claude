@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, findQuestions, findsToRun, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
+import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, findQuestions, findActions, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -67,20 +67,25 @@ test('finds the questions a reply ends on, and only then', () => {
   expect(findQuestions('')).toEqual([])
 })
 
-test('spots a reply that hands the user a command to run', () => {
-  expect(findsToRun('Wrote the script.\n\nRun `-WhatIf` first to preview:\n\n```powershell\n.\\x.ps1 -WhatIf\n```')).toBe(true)
-  expect(findsToRun('Done. You\'ll need to run `az login` before it works.')).toBe(true)
-  expect(findsToRun('1. Restart Claude Code\n2. Then type `/reload-plugins`')).toBe(true)
-  // Click-through steps: a verb after a lead-in, or a numbered list with no command shown.
-  expect(findsToRun('1. On your desktop, right-click **Open-Google.ps1**.\n2. Choose **Run with PowerShell**.\n\n```powershell\nSet-ExecutionPolicy -Scope CurrentUser RemoteSigned\n```')).toBe(true)
-  expect(findsToRun('Created `Open-Google.ps1`. To use it, right-click it and choose **Run with PowerShell**.')).toBe(true)
-  expect(findsToRun('1. Open Settings\n2. Click **Apps**\n3. Select the app')).toBe(true)
-  expect(findsToRun('1. Read the config\n2. Fixed the bug')).toBe(false)
-  // Saying what was run, or a command with nothing to do, is not an ask.
-  expect(findsToRun('I ran `claude plugin test`; all 21 pass.')).toBe(false)
-  expect(findsToRun('The fix is in `register.tsx:689`.')).toBe(false)
-  expect(findsToRun('Run the tests again when you like.')).toBe(false)
-  expect(findsToRun('')).toBe(false)
+test('takes the steps a reply leaves the user from its shape, not its words', () => {
+  const texts = (s: string) => findActions(s).map(a => [a.text, a.command])
+  // Numbered steps, whatever the verb; a shell block straight under an item is its command.
+  expect(texts('1. Go to Settings\n2. Drag **Apps** to the top\n3. Restart:\n\n```powershell\nRestart-Computer\n```')).toEqual([
+    ['Go to Settings', undefined],
+    ['Drag Apps to the top', undefined],
+    ['Restart:', 'Restart-Computer'],
+  ])
+  // A shell block after prose stands as its own action.
+  expect(texts('1. Right-click **Open-Google.ps1**.\n\nIf it closes, run this once:\n\n```powershell\nSet-ExecutionPolicy RemoteSigned\n```')).toEqual([
+    ['Right-click Open-Google.ps1.', undefined],
+    ['Run this command', 'Set-ExecutionPolicy RemoteSigned'],
+  ])
+  // Reports, labelled points, code to read and inline names are not steps.
+  expect(findActions('1. Read the config\n2. Fixed the bug')).toEqual([])
+  expect(findActions('1. **Validate:** ran on each mod\n2. **Tests:** all pass')).toEqual([])
+  expect(findActions('Here it is:\n\n```ts\nconst x = 1\n```')).toEqual([])
+  expect(findActions('The fix is in `register.tsx:689`.')).toEqual([])
+  expect(findActions('')).toEqual([])
 })
 
 test('the tool call saves the set and answers the model', async ($, on) => {
