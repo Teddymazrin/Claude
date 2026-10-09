@@ -85,18 +85,19 @@ test('reminder names the tool and how to load it', () => {
   expect(REMINDER).toContain('decisions or actions')
 })
 
-test('the Do tab shrinks in stages, the why lines last', () => {
+test('why and how-to count only when opened; the Do tab then shrinks by its commands', () => {
   const as = parsed({ title: 'T', actions: [1, 2, 3].map(n => ({ text: `A${n}`, why: 'w', detail: 'd', command: 'c' })) }).items as never[]
-  // Chrome 5; each action 4 rows; 2 blank lines between.
+  const closed = () => false
+  // Every info opened: chrome 5; each action 4 rows; 2 blank lines between.
   expect(doRows(as, 100, 0)).toBe(19)
-  expect(doRows(as, 100, 1)).toBe(17)
-  // How-to on the next one only: 17 - 2.
-  expect(doRows(as, 100, 2)).toBe(15)
-  // Why and command on the next one only too: 5 + 4 + 1 + 1.
-  expect(doRows(as, 100, 3)).toBe(11)
-  expect(doLevel(as, 100, 40)).toBe(0)
-  expect(doLevel(as, 100, 16)).toBe(3)
-  expect(doLevel(as, 100, 8)).toBe(3)
+  // Info closed: each action is its task and command, 2 rows.
+  expect(doRows(as, 100, 0, closed)).toBe(13)
+  expect(doRows(as, 100, 1, closed)).toBe(11)
+  // The command on the next one only: 5 + 2 + 1 + 1.
+  expect(doRows(as, 100, 3, closed)).toBe(9)
+  expect(doLevel(as, 100, 13, closed)).toBe(0)
+  expect(doLevel(as, 100, 12, closed)).toBe(1)
+  expect(doLevel(as, 100, 8, closed)).toBe(3)
 })
 
 test('a typed Other… answer counts; a blank one reopens the question', () => {

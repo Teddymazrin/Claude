@@ -45,6 +45,8 @@ declare module 'claude-code' {
       focus: string | null
       /** Whether ticked actions folded into "✓ N done" are listed again. */
       showDone: boolean
+      /** The asks whose info (why, how-to, context) is opened, as "a:<set id>:<index>" or "d:<set id>:<index>". */
+      info: string[]
     }
   }
 }

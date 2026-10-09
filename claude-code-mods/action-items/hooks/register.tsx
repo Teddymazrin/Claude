@@ -17,6 +17,8 @@ const tab = atom({ plugin: 'action-items', key: 'tab' } as const, null)
 const openAction = atom({ plugin: 'action-items', key: 'focus' } as const, null)
 // Whether ticked actions folded into "✓ N done" are listed again, to untick one.
 const showDone = atom({ plugin: 'action-items', key: 'showDone' } as const, false)
+// The asks whose info is opened: "a:<set id>:<index>" for an action, "d:..." for a decision.
+const info = atom({ plugin: 'action-items', key: 'info' } as const, [] as string[])
 
 // One accent, Claude's orange, on neutral greys: orange frame and header, near-white text,
 // charcoal buttons that turn orange on hover.
@@ -171,8 +173,11 @@ export const countText = (set: StepSet) => {
 export type DoLevel = 0 | 1 | 2 | 3
 const DO_CHROME = 5 // border, header, tabs and the gap under them
 
-/** Rows the Do tab takes at `level`, text wrapped at `columns`. */
-export const doRows = (list: readonly Action[], columns: number, level: DoLevel) => {
+/**
+ * Rows the Do tab takes at `level`, text wrapped at `columns`. An action's why and how-to sit behind
+ * its info toggle: they count only while `isInfo` says it is opened, whatever the level.
+ */
+export const doRows = (list: readonly Action[], columns: number, level: DoLevel, isInfo: (a: Action) => boolean = () => true) => {
   const width = Math.max(20, columns - 8)
   const lines = (t: string) => Math.max(1, Math.ceil(t.length / width))
   const open = list.filter(a => !a.isDone)
@@ -183,18 +188,18 @@ export const doRows = (list: readonly Action[], columns: number, level: DoLevel)
     rows += (level === 0 && i > 0 ? 1 : 0) + lines(a.text)
     if (a.isDone) return
     const isNext = a === next
-    if (a.why && (level < 3 || isNext)) rows += lines(`Why: ${a.why}`)
-    if (a.detail && (level < 2 || isNext)) rows += lines(a.detail)
+    if (a.why && isInfo(a)) rows += lines(`Why: ${a.why}`)
+    if (a.detail && isInfo(a)) rows += lines(a.detail)
     if (a.command && (level < 3 || isNext)) rows += lines(a.command)
   })
   return rows
 }
 
 /** The least shrinking that fits `maxRows`; the last level when none does. */
-export const doLevel = (list: readonly Action[], columns: number, maxRows: number): DoLevel =>
+export const doLevel = (list: readonly Action[], columns: number, maxRows: number, isInfo?: (a: Action) => boolean): DoLevel =>
   // Past the blank lines, straight to one open action and the rest one row each: a half-open middle
   // step left rows that neither showed everything nor folded to a line.
-  ([0, 1] as const).find(l => doRows(list, columns, l) <= maxRows) ?? 3
+  ([0, 1] as const).find(l => doRows(list, columns, l, isInfo) <= maxRows) ?? 3
 
 // One sentence: a stop or question mark not followed by a space stays inside it ("v1.2", "e.g.x").
 const SENTENCE = /(?:[^.!?]|[.!?](?=\S))+[.!?]*/g
@@ -277,8 +282,19 @@ function chip($: EngineInterface, e: Surface, key: string, label: string, onPres
   )
 }
 
+// "▸ info" after an ask's title: opens its why, how-to or context beneath, and closes it again.
+function infoButton($: EngineInterface, e: Surface, key: string, isOpen: boolean, onPress: () => unknown) {
+  const { Box, Button } = $.ui.resolve(e)
+  return (
+    <Box key={`${key}-box`} flexShrink={0} marginLeft={2}>
+      <Button key={key} plain dimColor={!isOpen} label={isOpen ? '▾ info' : '▸ info'} hover={{ bold: true }} onPress={onPress} />
+    </Box>
+  )
+}
+
 // "1  Which region?" with its options as buttons beneath; once answered, the pick in green.
-function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision, index: number, n: number, isSpaced: boolean, isFull = true) {
+// Its context line waits behind "▸ info".
+function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision, index: number, n: number, isSpaced: boolean, isFull: boolean, isInfo: boolean, onInfo: () => unknown) {
   const { Box, Text } = $.ui.resolve(e)
   const key = `${set.id}-${index}`
   const pending = isPending(set, d)
@@ -288,11 +304,12 @@ function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision,
         <Box width={4} flexShrink={0}>
           <Text color={pending ? C.decide : C.done}>{pending && !d.isTyping ? `${n}` : '✓'}</Text>
         </Box>
-        <Box flexGrow={1} flexShrink={1}>
+        <Box flexShrink={1}>
           <Text bold={pending && isFull} dimColor={!pending || !isFull}>{d.text}</Text>
         </Box>
+        {isFull && pending && d.detail && infoButton($, e, `dinfo-${key}`, isInfo, onInfo)}
       </Box>
-      {isFull && pending && d.detail && (
+      {isFull && pending && d.detail && isInfo && (
         <Box marginLeft={4}>
           <Text dimColor>{d.detail}</Text>
         </Box>
@@ -322,10 +339,11 @@ function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision,
   )
 }
 
-// "3  Sign in to Azure", the number ticking it off; why, how and the command, if any, beneath with Copy.
+// "3  Sign in to Azure", the number ticking it off, and the command, if any, beneath with Copy.
+// Its why and how-to wait behind "▸ info", so the task itself stands out.
 type Show = { why: boolean; detail: boolean; command: boolean }
 
-function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, index: number, n: number, isSpaced: boolean, show: Show, onOpen?: () => unknown, onClose?: () => unknown) {
+function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, index: number, n: number, isSpaced: boolean, show: Show, onInfo: () => unknown, onOpen?: () => unknown, onClose?: () => unknown) {
   const { Box, Text, Button } = $.ui.resolve(e)
   const key = `${set.id}-${index}`
   return (
@@ -340,22 +358,14 @@ function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, ind
             onPress={() => save($, l => toggleAction(l, set.id, index))}
           />
         </Box>
-        {/* A folded row with a Copy keeps it beside the text, not out at the box's edge. */}
-        <Box flexGrow={!show.command && a.command && !a.isDone ? 0 : 1} flexShrink={1}>
+        {/* The text takes only its own width, so info (and a folded row's Copy) sits right after it, not out at the box's edge. */}
+        <Box flexShrink={1}>
           {/* Not shown in full: its title opens it, folding the one open before. */}
           {onClose && !a.isDone ? (
             <Button key={`close-${key}`} plain label={`▾ ${a.text}`} hover={{ bold: true, underline: true }} onPress={onClose} />
           ) : onOpen && !a.isDone ? (
-            <Box flexDirection="row">
-              <Box flexShrink={0}>
-                <Button key={`open-${key}`} plain label={`▸ ${a.text}`} hover={{ bold: true, underline: true }} onPress={onOpen} />
-              </Box>
-              {/* Folded to one row, it keeps its why on the same line, cut at the edge. */}
-              {!show.why && a.why && (
-                <Box flexShrink={1}>
-                  <Text dimColor wrap="truncate-end">{` · ${a.why}`}</Text>
-                </Box>
-              )}
+            <Box flexShrink={0}>
+              <Button key={`open-${key}`} plain label={`▸ ${a.text}`} hover={{ bold: true, underline: true }} onPress={onOpen} />
             </Box>
           ) : (
             <Text bold={!a.isDone} dimColor={a.isDone} strikethrough={a.isDone} color={a.isDone ? C.done : undefined}>
@@ -363,6 +373,7 @@ function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, ind
             </Text>
           )}
         </Box>
+        {(a.why || a.detail) && !a.isDone && infoButton($, e, `info-${key}`, show.why || show.detail, onInfo)}
         {/* Folded, its command rides on the same row, cut to fit, with Copy after it. */}
         {!show.command && a.command && !a.isDone && (
           <Box flexShrink={1} marginLeft={2} backgroundColor={C.code} paddingX={1}>
@@ -590,6 +601,10 @@ export const register: Register = on => {
     const answered = decide.filter(x => !isPending(set, x.it))
     const waiting = decide.filter(x => isPending(set, x.it))
     const focus = waiting.find(x => !x.it.isTyping)?.i
+    const openInfo = await read($, info)
+    const isInfo = (kind: 'a' | 'd', i: number) => openInfo.includes(`${kind}:${set.id}:${i}`)
+    const toggleInfo = (kind: 'a' | 'd', i: number) => () =>
+      update($, info, v => (v.includes(`${kind}:${set.id}:${i}`) ? v.filter(k => k !== `${kind}:${set.id}:${i}`) : [...v, `${kind}:${set.id}:${i}`]))
     const decidePart = (
       <Box key="decide-part" flexDirection="column">
         {answered.length > 0 && waiting.length > 0 && (
@@ -598,14 +613,14 @@ export const register: Register = on => {
           </Box>
         )}
         {(waiting.length > 0 ? waiting : answered).map(x =>
-          decisionLine($, e, set, x.it, x.i, decide.indexOf(x) + 1, false, x.i === focus),
+          decisionLine($, e, set, x.it, x.i, decide.indexOf(x) + 1, false, x.i === focus, isInfo('d', x.i), toggleInfo('d', x.i)),
         )}
       </Box>
     )
 
     // Do: drawn whole when it fits; else ticked ones fold and only the next open action keeps
-    // its detail and command.
-    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows)
+    // its command. Why and how-to show only where the person opened an action's info.
+    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows, a => isInfo('a', set.items.indexOf(a)))
     const nextOpen = doing.find(x => !x.it.isDone)?.i
     const isDoneShown = await read($, showDone)
     const shown = level === 0 || isDoneShown ? doing : doing.filter(x => !x.it.isDone)
@@ -615,8 +630,9 @@ export const register: Register = on => {
     const focusKey = await read($, openAction)
     const opened =
       focusKey === `${set.id}:none` ? undefined : (doing.find(x => `${set.id}:${x.i}` === focusKey && !x.it.isDone)?.i ?? nextOpen)
-    const showFor = (i: number): Show => ({ why: level < 3 || i === opened, detail: level < 2 || i === opened, command: level < 3 || i === opened })
-    const isWhole = (sh: Show) => sh.why && sh.detail && sh.command
+    const showFor = (i: number): Show => ({ why: isInfo('a', i), detail: isInfo('a', i), command: level < 3 || i === opened })
+    // Folded means its command is tucked away; with no command there is nothing to open.
+    const isWhole = (sh: Show, a: Action) => sh.command || !a.command
     const doPart = (
       <Box key="do-part" flexDirection="column">
         {/* Ticked ones fold into a line that lists them again, so one can be unticked. */}
@@ -634,10 +650,10 @@ export const register: Register = on => {
         )}
         {shown.map((x, n) => {
           const sh = showFor(x.i)
-          const open = isWhole(sh) ? undefined : () => update($, openAction, () => `${set.id}:${x.i}`)
+          const open = isWhole(sh, x.it) ? undefined : () => update($, openAction, () => `${set.id}:${x.i}`)
           // In a short box the opened one folds back from its title too.
-          const close = level > 0 && x.i === opened ? () => update($, openAction, () => `${set.id}:none`) : undefined
-          return actionLine($, e, set, x.it, x.i, doing.indexOf(x) + 1, level === 0 && n > 0, sh, open, close)
+          const close = level > 0 && x.i === opened && x.it.command ? () => update($, openAction, () => `${set.id}:none`) : undefined
+          return actionLine($, e, set, x.it, x.i, doing.indexOf(x) + 1, level === 0 && n > 0, sh, toggleInfo('a', x.i), open, close)
         })}
       </Box>
     )

@@ -35,8 +35,13 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
     expect(await ui.find({ type: 'Text', text: /az login/ })).toBeUndefined()
     await ui.press({ key: 'tab-do' })
     expect(await ui.find({ type: 'Text', text: /az login/ })).toBeDefined()
+    // Why and how-to wait behind info until it is pressed, and fold away again.
+    expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeUndefined()
+    await ui.press({ key: 'info-5000-1' })
     expect(await ui.find({ type: 'Text', text: /pick your work account/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeDefined()
+    await ui.press({ key: 'info-5000-1' })
+    expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeUndefined()
     await ui.press({ key: 'tab-decide' })
     await ui.unmount()
   }
@@ -78,7 +83,7 @@ test('a typed reply keeps unanswered questions until Claude clears them', async 
   await after.unmount()
 })
 
-test('a list too tall for the box folds: only the next open action keeps its detail', async ($, on) => {
+test('info is closed by default; a box too short folds the other actions to one row', async ($, on) => {
   on('clock.now', () => ({ value: 9_000 }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -87,36 +92,36 @@ test('a list too tall for the box folds: only the next open action keeps its det
   const actions = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i + 1}`, why: `Why ${i + 1}`, detail: `How to do step ${i + 1}`, command: `run-${i + 1}` }))
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Long', actions } as never)
   const tall = { ...BAND, props: { ...BAND.props, maxRows: 60, scroll: { offset: 0, bodyRows: 60 } } }
+  const short = { ...BAND, props: { ...BAND.props, maxRows: 12, scroll: { offset: 0, bodyRows: 12 } } }
   for (const surface of SURFACES) {
-    // Room for all of it: every detail shows.
+    // Room for all of it: every task and command, but no why or how-to until info is opened.
     const full = await $.ui.mount({ plugin: 'action-items', surface, ...tall } as never)
+    expect(await full.find({ type: 'Text', text: /run-6/ })).toBeDefined()
+    expect(await full.find({ type: 'Text', text: /Why 6/ })).toBeUndefined()
+    expect(await full.find({ type: 'Text', text: /How to do step 6/ })).toBeUndefined()
+    await full.press({ key: 'info-9000-5' })
+    expect(await full.find({ type: 'Text', text: /Why 6/ })).toBeDefined()
     expect(await full.find({ type: 'Text', text: /How to do step 6/ })).toBeDefined()
+    expect(await full.find({ type: 'Text', text: /Why 5/ })).toBeUndefined()
+    await full.press({ key: 'info-9000-5' })
     await full.unmount()
-    // 20 rows: compact. Step 1's detail and command show, the rest are one line.
-    const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
-    expect(await ui.find({ type: 'Text', text: /How to do step 1/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /run-1/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /How to do step 2/ })).toBeUndefined()
-    // Folded, its title is a button that opens it.
+    // 12 rows: the next action keeps its command; the rest fold to one row with theirs and Copy.
+    const ui = await $.ui.mount({ plugin: 'action-items', surface, ...short } as never)
     expect(await ui.find({ key: 'open-9000-5' })).toBeDefined()
-    // Folded to one row, an action still says why.
-    expect(await ui.find({ type: 'Text', text: /· Why 6/ })).toBeDefined()
-    // Its command hidden, a folded action still has Copy.
     expect(await ui.find({ key: 'copy-9000-5' })).toBeDefined()
-    // ...and shows the command itself on the row.
     expect(await ui.find({ type: 'Text', text: /^run-6$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Why/ })).toBeUndefined()
     await ui.unmount()
   }
-  // Ticking step 1 folds it and hands the detail to step 2.
-  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
+  // Ticking step 1 folds it into "1 done".
+  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...short } as never)
   await ui.press({ key: 'tick-9000-0' })
   expect(await ui.find({ key: 'toggle-done' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /How to do step 2/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Step 1$/ })).toBeUndefined()
   await ui.unmount()
 })
 
-test('one question at a time: the first waiting one opens, the rest are one line', async ($, on) => {
+test('one question at a time: the first waiting one opens, its context behind info', async ($, on) => {
   on('clock.now', () => ({ value: 11_000 }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('ui.render', ($, e) => {
@@ -133,20 +138,25 @@ test('one question at a time: the first waiting one opens, the rest are one line
   } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
+    expect(await ui.find({ type: 'Text', text: /about first/ })).toBeUndefined()
+    await ui.press({ key: 'dinfo-11000-0' })
     expect(await ui.find({ type: 'Text', text: /about first/ })).toBeDefined()
+    await ui.press({ key: 'dinfo-11000-0' })
     expect(await ui.find({ type: 'Text', text: /Second\?/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /about second/ })).toBeUndefined()
+    // Waiting its turn, the second shows neither its info button nor its options.
+    expect(await ui.find({ key: 'dinfo-11000-1' })).toBeUndefined()
     expect(await ui.find({ key: 'pick-11000-1-0' })).toBeUndefined()
     await ui.unmount()
   }
   const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
   await ui.press({ key: 'pick-11000-0-1' })
   expect(await ui.find({ type: 'Text', text: /1 answered/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /about second/ })).toBeDefined()
+  expect(await ui.find({ key: 'dinfo-11000-1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /about second/ })).toBeUndefined()
   await ui.unmount()
 })
 
-test('a medium box keeps every why line, dropping only the how-to lines', async ($, on) => {
+test('opening info on one action leaves the others closed', async ($, on) => {
   on('clock.now', () => ({ value: 13_000 }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -157,12 +167,12 @@ test('a medium box keeps every why line, dropping only the how-to lines', async 
   const mid = { ...BAND, props: { ...BAND.props, maxRows: 16, scroll: { offset: 0, bodyRows: 16 } } }
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...mid } as never)
-    for (const n of [1, 2, 3]) {
-      expect(await ui.find({ type: 'Text', text: new RegExp(`Reason ${n}`) })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: new RegExp(`cmd-${n}`) })).toBeDefined()
-    }
-    expect(await ui.find({ type: 'Text', text: /Howto 1/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Howto 2/ })).toBeUndefined()
+    for (const n of [1, 2, 3]) expect(await ui.find({ type: 'Text', text: new RegExp(`cmd-${n}`) })).toBeDefined()
+    await ui.press({ key: 'info-13000-1' })
+    expect(await ui.find({ type: 'Text', text: /Reason 2/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Howto 2/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Reason 1/ })).toBeUndefined()
+    await ui.press({ key: 'info-13000-1' })
     await ui.unmount()
   }
 })
@@ -212,15 +222,16 @@ test('in a short box, clicking a folded action opens it in full', async ($, on) 
   })
   const actions = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i + 1}`, why: `Why ${i + 1}`, detail: `How to do step ${i + 1}`, command: `run-${i + 1}` }))
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Long', actions } as never)
-  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
-  expect(await ui.find({ type: 'Text', text: /How to do step 4/ })).toBeUndefined()
+  const short = { ...BAND, props: { ...BAND.props, maxRows: 12, scroll: { offset: 0, bodyRows: 12 } } }
+  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...short } as never)
+  expect(await ui.find({ key: 'close-60000-0' })).toBeDefined()
   await ui.press({ key: 'open-60000-3' })
-  expect(await ui.find({ type: 'Text', text: /How to do step 4/ })).toBeDefined()
+  expect(await ui.find({ key: 'close-60000-3' })).toBeDefined()
   // The one open before folds back.
-  expect(await ui.find({ type: 'Text', text: /How to do step 1/ })).toBeUndefined()
+  expect(await ui.find({ key: 'open-60000-0' })).toBeDefined()
   // Its title folds it again.
   await ui.press({ key: 'close-60000-3' })
-  expect(await ui.find({ type: 'Text', text: /How to do step 4/ })).toBeUndefined()
+  expect(await ui.find({ key: 'open-60000-3' })).toBeDefined()
   // A ticked one can be listed again and unticked.
   await ui.press({ key: 'tick-60000-0' })
   expect(await ui.find({ key: 'tick-60000-0' })).toBeUndefined()

@@ -1,5 +1,17 @@
 # Action Items log
 
+## 4.3.0 (2026-10-09)
+
+**Asked for:** (screenshot) the box looks good but is messy: wrap the Why and the other extra info into an "info" button you click to expand and collapse, so the task itself stands out.
+
+**Changed:**
+- Each action shows only its number, the task, and the command with **Copy**. Its **Why:** and how-to lines sit behind a dim **▸ info** after the task; click it to open them (**▾ info**), and again to close. Each action opens on its own
+- A question's context line works the same way; its options stay in view
+- In a short box, closed info takes no rows, so the box folds far less often. When it does, the folded rows show title · command and Copy (the inline why is gone)
+- The command stays visible on purpose: it is the task itself (asked in the box; the default was used while the answer was open)
+
+**Found in testing:** on the Do tab, **▸ info** sat at the far right of the box, not after the task (the same thing that happened to Copy in 4.0.1). The task text stretched to fill the row; it now takes only its own width, so info follows it. The Decide tab was already right.
+
 ## 4.2.0 (2026-10-09)
 
 **Asked for:** there was no way to get rid of an older ask you didn't care about. After you ticked off everything in the newest set, the box fell back to an old set, and ✕ only hid it until next time.
