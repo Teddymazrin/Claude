@@ -229,3 +229,47 @@ test('in a short box, clicking a folded action opens it in full', async ($, on) 
   expect(await ui.find({ key: 'toggle-done' })).toBeUndefined()
   await ui.unmount()
 })
+
+test('Clear drops the set shown so the box moves on, and Clear all empties it', async ($, on) => {
+  let now = 1_000
+  on('clock.now', () => ({ value: now }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  const ask = async (title: string, at: number) => {
+    now = at
+    await $.tool.call({ tool: 'mcp__action-items__action_items', title, actions: [{ text: `Do ${title}`, why: 'Test' }] } as never)
+  }
+  await ask('Old one', 1_000)
+  await ask('Middle one', 2_000)
+  await ask('New one', 3_000)
+
+  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
+  expect(await ui.find({ type: 'Text', text: 'New one' })).toBeDefined()
+  expect(await ui.find({ key: 'clear-all' })).toBeDefined()
+  // Ticking the newest off falls back to the next one still open; Clear drops that one for good.
+  await ui.press({ key: 'tick-3000-0' })
+  expect(await ui.find({ type: 'Text', text: 'Middle one' })).toBeDefined()
+  await ui.press({ key: 'clear' })
+  expect(await ui.find({ type: 'Text', text: 'Middle one' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Old one' })).toBeDefined()
+  // One left open: no Clear all; Clear closes the box.
+  expect(await ui.find({ key: 'clear-all' })).toBeUndefined()
+  await ui.press({ key: 'clear' })
+  expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
+  await ui.unmount()
+
+  // Clear all empties the box, older sets included.
+  await ask('A', 4_000)
+  await ask('B', 5_000)
+  for (const surface of SURFACES) {
+    const box = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
+    if (surface === 'terminal') {
+      await box.press({ key: 'clear-all' })
+      expect(await box.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
+    }
+    await box.unmount()
+  }
+  expect(await $.command.run({ command: 'action-items' } as never)).toEqual({ text: 'Nothing open: Claude needs nothing from you right now.' })
+})

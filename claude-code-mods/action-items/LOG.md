@@ -1,5 +1,11 @@
 # Action Items log
 
+## 4.2.0 (2026-10-09)
+
+**Asked for:** there was no way to get rid of an older ask you didn't care about. After you ticked off everything in the newest set, the box fell back to an old set, and ✕ only hid it until next time.
+
+**Changed:** the header has **Clear** next to ✕: it removes the set on show for good (ticked or not), from this session and the saved copy, and the box moves on to the next set still waiting or closes. When more than one set is open, **Clear all N** empties the box in one click.
+
 ## 4.1.2 (2026-10-08)
 
 **Found in testing:** folding an opened action didn't bring it back to one line; it kept its why and command lines (the box was on its middle "how-to only" step).

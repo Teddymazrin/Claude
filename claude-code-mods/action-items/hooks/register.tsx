@@ -110,6 +110,9 @@ export const startTyping = (list: readonly StepSet[], id: string, index: number)
 
 export const markSent = (list: readonly StepSet[], id: string) => list.map(s => (s.id === id ? { ...s, isSent: true } : s))
 
+/** Drops a set the person no longer cares about, done or not, so the box never falls back to it. */
+export const clearSet = (list: readonly StepSet[], id: string) => list.filter(s => s.id !== id)
+
 /** Marks the set sent once no decision waits any more. */
 const closeIfDone = (set: StepSet): StepSet =>
   decisions(set).every(d => d.answer !== undefined && !d.isTyping) ? { ...set, isSent: true } : set
@@ -552,6 +555,18 @@ export const register: Register = on => {
     const set = asked && isOpen(asked) ? asked : nextSet(list)
     if (!set) return below
     const { Box, Text, Button } = $.ui.resolve(e)
+    const openCount = list.filter(isOpen).length
+    const clearShown = async () => {
+      const left = await save($, l => clearSet(l, set.id))
+      await update($, tab, () => null)
+      // On to the next set still waiting, or the box closes.
+      await update($, band, () => nextSet(left)?.id ?? null)
+    }
+    const clearAll = async () => {
+      await save($, () => [])
+      await update($, tab, () => null)
+      await update($, band, () => null)
+    }
     const decide = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Decision; i: number } => x.it.kind === 'decide')
     const doing = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Action; i: number } => x.it.kind === 'do')
     // One section at a time: the tab the person picked, else Decide while a question waits.
@@ -636,7 +651,18 @@ export const register: Register = on => {
               <Text dimColor>{'  ·  '}</Text>
               <Text bold>{set.title}</Text>
             </Text>
-            <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
+            <Box key="band-buttons" flexDirection="row" flexShrink={0}>
+              {/* Clear drops this set for good, so the box moves on instead of coming back to it. */}
+              {openCount > 1 && (
+                <Box key="clear-all-box" marginRight={2}>
+                  <Button key="clear-all" plain dimColor label={`Clear all ${openCount}`} hover={{ bold: true }} onPress={() => clearAll()} />
+                </Box>
+              )}
+              <Box key="clear-box" marginRight={2}>
+                <Button key="clear" plain dimColor label="Clear" hover={{ bold: true }} onPress={() => clearShown()} />
+              </Box>
+              <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
+            </Box>
           </Box>
           <Box key="tabs" flexDirection="row" marginBottom={1}>
             {decide.length > 0 && tabChip('decide', '?', 'Decide', C.decide, waiting.length)}

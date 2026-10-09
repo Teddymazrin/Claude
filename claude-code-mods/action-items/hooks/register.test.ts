@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, answerText, applyTyped, markAnswered, countText, findQuestions, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, startTyping, toggleAction } from './register'
+import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, findQuestions, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -116,4 +116,12 @@ test('answered clears questions by their number in the box', () => {
   const one = markAnswered(set, [2])
   expect(countText(one)).toBe('1 to decide · 1 to do')
   expect(markAnswered(one, [1]).isSent).toBe(true)
+})
+
+test('clearSet drops one set by id, open or not', () => {
+  const a: StepSet = { id: 'a', title: 'A', items: [{ kind: 'do', text: 'x', isDone: false }], at: 1 }
+  const b: StepSet = { id: 'b', title: 'B', items: [{ kind: 'do', text: 'y', isDone: true }], at: 2 }
+  expect(clearSet([b, a], 'a')).toEqual([b])
+  expect(clearSet([b, a], 'b')).toEqual([a])
+  expect(clearSet([a], 'missing')).toEqual([a])
 })

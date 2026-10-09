@@ -86,7 +86,7 @@ The box opens on Decide while a question waits and moves to Do once they're answ
 
 **Safety net:** if Claude ends a reply asking you something without using the box, the questions are put there anyway.
 
-**Closing it:** the box closes when everything is answered and done, or with ✕. When one set is done, the box moves on to the next one still waiting. `/action-items` brings back what's still open.
+**Closing it:** the box closes when everything is answered and done, or with ✕. When one set is done, the box moves on to the next one still waiting. ✕ only hides the box; `/action-items` brings back what's still open. **Clear** (next to ✕) drops the set you're looking at for good, done or not, so the box never goes back to it. **Clear all N** shows when more than one set is still open, and empties the box.
 
 **The look:** a Claude-orange frame and header, near-white text, charcoal buttons that turn orange on hover.
 
