@@ -231,19 +231,20 @@ export const findQuestions = (answer: string): string[] => {
     .map(s => (s.length > 160 ? `${s.slice(0, 157)}...` : s))
 }
 
-// A line that hands the user something to do: "Run it with…", "1. Paste this…", "You'll need to sign in…".
-const TO_RUN =
-  /(?:^|[.!:]\s+)(?:then\s+|first\s+|next\s+)?(?:run|execute|paste|type|restart|reload|sign in|log in)\b|\byou(?:'ll| will)? (?:need to|have to|should|can now) (?:run|execute|paste|type|restart|reload|sign in|log in)\b/im
+// A line that hands the user something to do: "Run it with…", "1. Paste this…", "On your desktop, right-click…", "You'll need to sign in…".
+const TO_DO = 'run|execute|paste|type|restart|reload|sign in|log in|right-click|double-click|click|open|choose|select|press'
+const TO_RUN = new RegExp(
+  `(?:^|[.!:,]\\s+)(?:then\\s+|first\\s+|next\\s+)?(?:${TO_DO})\\b|\\byou(?:'ll| will)? (?:need to|have to|should|can now) (?:${TO_DO})\\b`,
+  'im',
+)
 
-/** Whether a reply gives the user a command to run themselves: a command shown, and a line telling them to run something. */
+/** Whether a reply hands the user steps to do themselves: a command shown or a numbered list of steps, and a line telling them to do something. */
 export const findsToRun = (answer: string): boolean => {
   const hasCommand = /```[\s\S]*?```|`[^`\n]+`/.test(answer)
-  const prose = answer
-    .replace(/```[\s\S]*?```/g, '')
-    .split('\n')
-    .map(unmark)
-    .join('\n')
-  return hasCommand && TO_RUN.test(prose)
+  const lines = answer.replace(/```[\s\S]*?```/g, '').split('\n')
+  const hasSteps = lines.filter(l => /^\s*\d+[.)]\s+/.test(l)).length >= 2
+  const prose = lines.map(unmark).join('\n')
+  return (hasCommand || hasSteps) && TO_RUN.test(prose)
 }
 
 export const NUDGE = `[Action Items] Your reply tells the user to run something, but you didn't call ${TOOL_ID} this turn. Call it now with those steps as \`actions\` (text, why, command), then end with one short line pointing to the box.`

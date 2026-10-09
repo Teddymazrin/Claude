@@ -1,5 +1,15 @@
 # Action Items log
 
+## 4.6.0 (2026-10-09)
+
+**Asked for:** Claude gave numbered "right-click, choose Run with PowerShell" steps and a command, but the box stayed empty and the safety net didn't catch it. Picked: widen the net.
+
+**Changed:**
+- The end-of-turn check now also catches click-through steps: right-click, double-click, click, open, choose, select and press, alongside run, paste, type, restart and sign in
+- A verb after a comma counts too ("On your desktop, right-click…", "To use it, right-click…")
+- A numbered list of two or more steps counts even with no command shown ("1. Open Settings 2. Click Apps")
+- A numbered list that only reports what was done ("1. Read the config 2. Fixed the bug") still doesn't trigger it
+
 ## 4.5.0 (2026-10-09)
 
 **Asked for:** cut the mods' token cost; picked: drop the per-message reminders only.
