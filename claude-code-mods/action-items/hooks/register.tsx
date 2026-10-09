@@ -226,6 +226,23 @@ export const findQuestions = (answer: string): string[] => {
     .map(s => (s.length > 160 ? `${s.slice(0, 157)}...` : s))
 }
 
+// A line that hands the user something to do: "Run it with…", "1. Paste this…", "You'll need to sign in…".
+const TO_RUN =
+  /(?:^|[.!:]\s+)(?:then\s+|first\s+|next\s+)?(?:run|execute|paste|type|restart|reload|sign in|log in)\b|\byou(?:'ll| will)? (?:need to|have to|should|can now) (?:run|execute|paste|type|restart|reload|sign in|log in)\b/im
+
+/** Whether a reply gives the user a command to run themselves: a command shown, and a line telling them to run something. */
+export const findsToRun = (answer: string): boolean => {
+  const hasCommand = /```[\s\S]*?```|`[^`\n]+`/.test(answer)
+  const prose = answer
+    .replace(/```[\s\S]*?```/g, '')
+    .split('\n')
+    .map(unmark)
+    .join('\n')
+  return hasCommand && TO_RUN.test(prose)
+}
+
+export const NUDGE = `[Action Items] Your reply tells the user to run something, but you didn't call ${TOOL_ID} this turn. Call it now with those steps as \`actions\` (text, why, command), then end with one short line pointing to the box.`
+
 // Every change goes to the session's state (redraws the box) and the store (kept across sessions).
 async function save($: EngineInterface, fn: (list: StepSet[]) => StepSet[]) {
   const next = await update($, sets, list => fn(list))
@@ -543,6 +560,15 @@ export const register: Register = on => {
     const clicks = decisions(parsed).some(d => d.options.length > 0) ? ' Their clicked answers come back to you as their next message.' : ''
     return { result: `Shown in the Action Items box above the prompt (${countText(parsed)}). Tell the user it is there instead of repeating it.${clicks}` }
   })
+
+  // The other safety net: a reply that hands the user commands to run, with nothing in the box,
+  // sends Claude back once to put them there. Once only: a second stop goes through.
+  on('classic.Stop', async ($, e, next) => {
+    const done = await next(e)
+    if (done.block || e.stop_hook_active || isAskedThisTurn) return done
+    if (!findsToRun(e.last_assistant_message ?? '')) return done
+    return { ...done, block: NUDGE }
+  }).catch(($, e, next) => next(e))
 
   // The safety net: a reply that ends asking something, with nothing put in the box, gets its questions put there.
   on('turn.complete', async ($, e, next) => {

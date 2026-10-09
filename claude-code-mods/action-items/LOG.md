@@ -1,5 +1,14 @@
 # Action Items log
 
+## 4.4.0 (2026-10-09)
+
+**Asked for:** Claude wrote a PowerShell script and ended with "run it with `-WhatIf` first" and the commands, but never used the box. Add an end-of-turn check that nudges Claude when it forgets.
+
+**Changed:**
+- A reply that shows a command and tells you to run something (Run…, Paste…, Restart…, You'll need to sign in…), with nothing put in the box that turn, sends Claude back once to add those steps as actions. Only once: if it still stops, the turn ends as normal
+- Questions were already caught (the "Claude asked" set); this covers the actions side
+- Saying what Claude ran ("I ran the tests") or naming a file in backticks doesn't trigger it
+
 ## 4.3.0 (2026-10-09)
 
 **Asked for:** (screenshot) the box looks good but is messy: wrap the Why and the other extra info into an "info" button you click to expand and collapse, so the task itself stands out.

@@ -6,7 +6,7 @@ Six mods for Claude Code. They work in the terminal and in the desktop app's Cod
 | --- | --- | --- |
 | [Bare View](#bare-view) | 1.9.1 | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.8.1 | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Action Items](#action-items) | 4.3.0 | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
+| [Action Items](#action-items) | 4.4.0 | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | 1.3.0 | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
 | [Context Lens](#context-lens) | 1.1.0 | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -87,7 +87,7 @@ The box opens on Decide while a question waits and moves to Do once they're answ
 
 **Answering by typing:** a typed message doesn't wipe the box. Claude is told which questions are still open and clears only the ones your message answered.
 
-**Safety net:** if Claude ends a reply asking you something without using the box, the questions are put there anyway.
+**Safety net:** if Claude ends a reply asking you something without using the box, the questions are put there anyway. If it ends a reply telling you to run a command without using the box, it's sent back once to put the steps there.
 
 **Closing it:** the box closes when everything is answered and done, or with ✕. When one set is done, the box moves on to the next one still waiting. ✕ only hides the box; `/action-items` brings back what's still open. **Clear** (next to ✕) drops the set you're looking at for good, done or not, so the box never goes back to it. **Clear all N** shows when more than one set is still open, and empties the box.
 

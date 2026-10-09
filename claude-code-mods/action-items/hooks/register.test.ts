@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, findQuestions, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, startTyping, toggleAction } from './register'
+import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, findQuestions, findsToRun, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -65,6 +65,17 @@ test('finds the questions a reply ends on, and only then', () => {
   expect(findQuestions('Is it ok? I went ahead anyway.')).toEqual([])
   expect(findQuestions('All done.\n\n```\nwhy?\n```')).toEqual([])
   expect(findQuestions('')).toEqual([])
+})
+
+test('spots a reply that hands the user a command to run', () => {
+  expect(findsToRun('Wrote the script.\n\nRun `-WhatIf` first to preview:\n\n```powershell\n.\\x.ps1 -WhatIf\n```')).toBe(true)
+  expect(findsToRun('Done. You\'ll need to run `az login` before it works.')).toBe(true)
+  expect(findsToRun('1. Restart Claude Code\n2. Then type `/reload-plugins`')).toBe(true)
+  // Saying what was run, or a command with nothing to do, is not an ask.
+  expect(findsToRun('I ran `claude plugin test`; all 21 pass.')).toBe(false)
+  expect(findsToRun('The fix is in `register.tsx:689`.')).toBe(false)
+  expect(findsToRun('Run the tests again when you like.')).toBe(false)
+  expect(findsToRun('')).toBe(false)
 })
 
 test('the tool call saves the set and answers the model', async ($, on) => {
