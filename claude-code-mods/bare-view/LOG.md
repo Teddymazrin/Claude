@@ -1,5 +1,15 @@
 # Bare View log
 
+## 1.11.0 (2026-10-09)
+
+**Asked for:** make Claude's final answer shorter, more concise and focused.
+
+**Changed:**
+- The final-answer instruction now asks for the result in 1-2 sentences, then only what you must act on or what changes how you read the result (a failure, a caveat, a surprise)
+- It rules out recapping the steps, restating the request, closing offers and headings on short answers, and caps the answer at about 5 lines
+- Longer answers are still allowed when you ask for an explanation, or when the content itself (code, a table, a list you asked for) is the point
+- Adds about 40 tokens to the cached instructions and saves output tokens on most turns
+
 ## 1.10.0 (2026-10-09)
 
 **Asked for:** cut the mods' token cost; picked: drop the per-message reminders only.

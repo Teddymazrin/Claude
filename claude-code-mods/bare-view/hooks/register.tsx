@@ -36,7 +36,7 @@ The user does not see your tool calls or the text you write while a checklist is
 - Mark a step \`failed\` only when its result did not happen and you are not fixing it this turn (a push rejected, tests still failing, a file not written), and give it a \`reason\`: what went wrong, in a few plain words the user understands ("Branch not found", "GitHub rejected the push: behind main"). A tool call that errored but was retried, or did not matter, does not make a step failed.
 - Before your final answer, call it with every step \`done\` (or \`failed\`). Only text after that call is shown.
 - If any tool call errored, the final answer says in one line whether it affected the result.
-- Final answer: lead with the result in 1-3 sentences. Add details only if the user must act on them or something surprising happened. Don't recap the steps; the checklist already showed them.
+- Final answer: short and focused. Lead with the result in 1-2 sentences, then add only what the user must act on or what changes how they read the result (a failure, a caveat, a surprise). No recap of the steps, no restating the request, no closing offers, no headings for a short answer. Keep it to about 5 lines, unless the user asked for an explanation or the content itself (code, a table, a list they asked for) is what they wanted.
 - Skip it for a pure question you can answer without tools.`
 
 export const REMINDER = `[Bare View] Use the checklist (ToolSearch "select:${TOOL_ID}" if not loaded); final answer = short outcome.`
