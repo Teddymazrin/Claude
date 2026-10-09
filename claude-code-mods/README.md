@@ -1,13 +1,12 @@
 # Claude Code mods
 
-Six mods for Claude Code (plus Action Steps, which Action Items is replacing). They work in the terminal and in the desktop app's Code tab.
+Six mods for Claude Code. They work in the terminal and in the desktop app's Code tab.
 
 | Mod | What it does |
 | --- | --- |
 | [Bare View](#bare-view) | A live task checklist above the prompt, with a tally of every tool call and a peek at each step's calls; hides the tool-call noise |
 | [Control Panel](#control-panel) | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Action Items](#action-items) | Everything Claude needs from you, decisions apart from actions, in a box above the prompt |
-| [Action Steps](#action-steps-being-replaced) | *Being replaced by Action Items.* Follow-up steps in a side pane |
 | [Guard Rails](#guard-rails) | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
 | [Context Lens](#context-lens) | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -70,7 +69,7 @@ Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
 ## Action Items
 
-Whenever Claude needs something from you, it goes in one box above the prompt instead of getting lost in the chat: questions you answer, apart from things you do yourself. It replaces Action Steps and its side pane.
+Whenever Claude needs something from you, it goes in one box above the prompt instead of getting lost in the chat: questions you answer, apart from things you do yourself. It replaced Action Steps and its side pane.
 
 The box has two tabs, so it stays small:
 
@@ -91,7 +90,7 @@ The box opens on Decide while a question waits and moves to Do once they're answ
 
 ### Moving from Action Steps
 
-Action Items is a new install, not an update: `action-steps` was renamed, so `claude plugin update action-steps@teddymazrin-mods` won't move you over. In a regular terminal:
+Action Steps has been removed from the marketplace. If you still have it installed, Action Items is a new install, not an update. In a regular terminal:
 
 ```
 claude plugin marketplace update teddymazrin-mods
@@ -100,12 +99,6 @@ claude plugin uninstall action-steps@teddymazrin-mods
 ```
 
 Restart Claude Code (or run `/reload-plugins`). Steps saved by Action Steps don't carry over.
-
-## Action Steps (being replaced)
-
-*Kept in the marketplace while Action Items is checked on every machine; it will be removed after that. New installs should use [Action Items](#action-items).*
-
-When a task leaves you something to do yourself, Claude sends the steps to a side pane that opens by itself. The pane docks on the right in fullscreen from 110 columns; in a narrower window the steps show in a box above the prompt. `/action-steps` opens the pane by hand.
 
 ## Guard Rails
 
