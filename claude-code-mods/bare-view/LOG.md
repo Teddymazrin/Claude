@@ -1,5 +1,21 @@
 # Bare View log
 
+## 1.9.0 (2026-10-09)
+
+**Asked for:** after a push, the band said "1 failed" even though the push worked (my verification command had errored). How do you tell a genuine failure from a harmless one? Picked: split tool errors from real step failures.
+
+**Changed:**
+- Steps take a new status, `failed`, which Claude sets only when the result of the step really didn't happen and it is leaving it (a rejected push, tests still failing). Only those get the pink `✗`, read **Failed**, and fill the bar. The folded line reads `✗ 3 done · 1 step failed · …` and the finished label `1 step failed`
+- A tool call that errored no longer changes the step's bullet. It is counted dim as `· 1 error` on the folded line, and in a step's peek it has an orange `!` with its error line
+- New instructions: whenever a tool call errored, Claude's final answer says in one line whether it affected the result
+- This replaces 1.8.2's rule, where any errored call put the pink `✗` on its step
+
+**Found in testing:** a quote in the new tool description broke the module; caught by the type check and tests before anything shipped.
+
+**Found in the live demo (screenshot):** the failed step was marked, but nothing said what failed: you had to open the step, and even then its call only read `Exit code 128`. Fixed before shipping:
+- A failed step takes a `reason` from Claude ("Branch not found"), shown in pink under the step (`↳ Branch not found`) and, while the band is folded, on its own line under the summary (`✗ Find a branch: Branch not found`, up to 3)
+- A peeked call's error line shows what went wrong instead of the bare exit code: `fatal: Needed a single revision (exit 128)`
+
 ## 1.8.2 (2026-10-09)
 
 **Asked for:** idea 5 from the visual polish list: mark failed steps.

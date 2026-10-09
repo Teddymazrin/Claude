@@ -31,13 +31,18 @@ const INSTRUCTIONS = `# Bare View progress checklist
 The user does not see your tool calls or the text you write while a checklist is in progress; they see a checklist drawn from the \`${TOOL_ID}\` tool.
 - At the start of every request that needs any work (reading, searching, editing, running), call \`${TOOL_ID}\` first with a short \`goal\` and 2-7 concrete \`steps\`, the first one \`active\`, the rest \`todo\`.
 - Call it again only when the plan changes; do not send an update after every step.
-- Before your final answer, call it with every step \`done\`. Only text after that call is shown.
+- Mark a step \`failed\` only when its result did not happen and you are not fixing it this turn (a push rejected, tests still failing, a file not written), and give it a \`reason\`: what went wrong, in a few plain words the user understands ("Branch not found", "GitHub rejected the push: behind main"). A tool call that errored but was retried, or did not matter, does not make a step failed.
+- Before your final answer, call it with every step \`done\` (or \`failed\`). Only text after that call is shown.
+- If any tool call errored, the final answer says in one line whether it affected the result.
 - Final answer: lead with the result in 1-3 sentences. Add details only if the user must act on them or something surprising happened. Don't recap the steps; the checklist already showed them.
 - Skip it for a pure question you can answer without tools.`
 
 export const REMINDER = `[Bare View] Use the checklist (ToolSearch "select:${TOOL_ID}" if not loaded); final answer = short outcome.`
 
-const STATUSES: readonly StepStatus[] = ['done', 'active', 'todo']
+const STATUSES: readonly StepStatus[] = ['done', 'active', 'todo', 'failed']
+
+/** A step that is over: done, or failed and left. */
+export const isClosed = (step: Step) => step.status === 'done' || step.status === 'failed'
 
 export const bar = (done: number, total: number, width = 12) => {
   const filled = total === 0 ? 0 : Math.round((done / total) * width)
@@ -46,13 +51,15 @@ export const bar = (done: number, total: number, width = 12) => {
 
 export const progress = (list: Checklist) => {
   const total = list.steps.length
-  const done = list.steps.filter(s => s.status === 'done').length
+  // Failed steps are over too: they fill the bar like done ones.
+  const done = list.steps.filter(isClosed).length
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
-  return { done, total, percent }
+  const failed = list.steps.filter(s => s.status === 'failed').length
+  return { done, total, percent, failed }
 }
 
 export const isInProgress = (list: Checklist | null) =>
-  list !== null && list.steps.length > 0 && list.steps.some(s => s.status !== 'done')
+  list !== null && list.steps.length > 0 && list.steps.some(s => !isClosed(s))
 
 export const parseChecklist = (input: Record<string, unknown>): Checklist | string => {
   const goal = typeof input.goal === 'string' ? input.goal.trim() : ''
@@ -60,10 +67,12 @@ export const parseChecklist = (input: Record<string, unknown>): Checklist | stri
   if (!Array.isArray(input.steps)) return '`steps` must be an array.'
   const steps: Step[] = []
   for (const raw of input.steps) {
-    const s = raw as { text?: unknown; status?: unknown }
+    const s = raw as { text?: unknown; status?: unknown; reason?: unknown }
     if (typeof s?.text !== 'string' || !s.text.trim()) return 'Each step needs a `text`.'
     const status = STATUSES.includes(s.status as StepStatus) ? (s.status as StepStatus) : 'todo'
-    steps.push({ text: s.text.trim(), status })
+    // A reason belongs to a failed step only.
+    const reason = status === 'failed' && typeof s.reason === 'string' ? s.reason.replace(/\s+/g, ' ').trim() : ''
+    steps.push({ text: s.text.trim(), status, ...(reason ? { reason } : {}) })
   }
   return { goal, steps }
 }
@@ -147,7 +156,7 @@ export const callDetail = (tool: string, input: Record<string, unknown>, max = 7
 export const addCall = (list: Checklist, call: Call): Checklist => {
   if (list.steps.length === 0) return { ...list, early: [...(list.early ?? []), call] }
   let at = list.steps.findIndex(s => s.status === 'active')
-  if (at < 0) at = list.steps.findIndex(s => s.status !== 'done')
+  if (at < 0) at = list.steps.findIndex(s => !isClosed(s))
   if (at < 0) at = list.steps.length - 1
   return { ...list, steps: list.steps.map((s, i) => (i === at ? { ...s, calls: [...(s.calls ?? []), call] } : s)) }
 }
@@ -164,7 +173,11 @@ export const failCall = (list: Checklist, id: string): Checklist => endCall(list
 /** The first line of what a call returned, for its peek: the reason it was refused, the text the model read, or a plain string result. */
 export const resultPreview = (ran: { text?: unknown; result?: unknown; deny?: unknown }, max = 90) => {
   const raw = typeof ran.deny === 'string' ? ran.deny : typeof ran.text === 'string' ? ran.text : typeof ran.result === 'string' ? ran.result : ''
-  const line = raw.split(/\r?\n/).map(l => l.trim()).find(l => l.length > 0) ?? ''
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0)
+  // "Exit code 128" says nothing on its own: show the line that says what went wrong, with the code after it.
+  const exit = /^exit code (\d+)$/i.exec(lines[0] ?? '')
+  const said = exit ? lines.find(l => !/^exit code \d+$/i.test(l)) : undefined
+  const line = exit && said ? `${said} (exit ${exit[1]})` : (lines[0] ?? '')
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
 
@@ -231,6 +244,7 @@ export const elapsed = (ms: number) => {
 export const statusWord = (steps: readonly Step[], index: number) => {
   const step = steps[index]!
   if (step.status === 'done') return 'Done'
+  if (step.status === 'failed') return 'Failed'
   if (step.status === 'active') return 'Working'
   const firstTodo = steps.findIndex(s => s.status === 'todo')
   return index === firstTodo ? 'Next' : 'Up next'
@@ -258,16 +272,21 @@ export const activityLine = (act: Activity, now: number) => {
   return { verb, took: `${elapsed(now - act.since)}${agents}` }
 }
 
-/** A finished checklist in one line: "All 4 done · 2m 13s · 14 tool calls · 1 failed". */
+/**
+ * A finished checklist in one line: "All 4 done · 2m 13s · 14 tool calls · 1 error", or
+ * "3 done · 1 step failed · …" when Claude marked a step failed. A tool error is not a failure.
+ */
 export const foldedLine = (list: Checklist, timer: string) => {
   const calls = [...(list.early ?? []), ...list.steps.flatMap(s => s.calls ?? [])]
-  const failed = calls.filter(c => c.isError).length
+  const errors = calls.filter(c => c.isError).length
   const total = list.tally?.total ?? calls.length
+  const failed = list.steps.filter(s => s.status === 'failed').length
+  const head = failed > 0 ? `${list.steps.length - failed} done · ${failed} step${failed === 1 ? '' : 's'} failed` : `All ${list.steps.length} done`
   return [
-    `All ${list.steps.length} done`,
+    head,
     timer,
     total > 0 ? `${total} tool call${total === 1 ? '' : 's'}` : '',
-    failed > 0 ? `${failed} failed` : '',
+    errors > 0 ? `${errors} error${errors === 1 ? '' : 's'}` : '',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -329,7 +348,12 @@ export const register: Register = on => {
               type: 'object',
               properties: {
                 text: { type: 'string', description: 'The step, a few words.' },
-                status: { type: 'string', enum: ['done', 'active', 'todo'] },
+                status: {
+                  type: 'string',
+                  enum: ['done', 'active', 'todo', 'failed'],
+                  description: 'failed: only when the result of the step did not happen and you are leaving it, not for a tool call that errored and was retried.',
+                },
+                reason: { type: 'string', description: 'For a failed step only: what went wrong, a few plain words.' },
               },
               required: ['text', 'status'],
             },
@@ -548,15 +572,15 @@ export const register: Register = on => {
     const opened = await read($, openTally)
     const groups = tallyGroups(list.tally)
     const now = await $.clock.now()
-    const { done, total, percent } = progress(list)
+    const { done, total, percent, failed: failedSteps } = progress(list)
     const isFinished = total > 0 && done === total
     const timer = list.startedAt === undefined ? '' : elapsed((list.finishedAt ?? now) - list.startedAt)
     const tickNo = Math.floor(now / 1000)
 
     // Inside the frame: two border cells and two of padding.
     const inner = Math.max(30, e.props.bodyColumns - 4)
-    const label = total === 0 ? (e.props.isWorking ? 'Planning…' : 'No plan yet') : isFinished ? `All ${total} done` : `Step ${Math.min(done + 1, total)} of ${total}`
-    const labelW = 14
+    const label = total === 0 ? (e.props.isWorking ? 'Planning…' : 'No plan yet') : isFinished ? (failedSteps > 0 ? `${failedSteps} step${failedSteps === 1 ? '' : 's'} failed` : `All ${total} done`) : `Step ${Math.min(done + 1, total)} of ${total}`
+    const labelW = 16
     const pctText = `${percent}%`
     const barW = Math.max(8, inner - labelW - pctText.length - 1)
     const filled = total === 0 ? 0 : Math.round((done / total) * barW)
@@ -593,10 +617,19 @@ export const register: Register = on => {
         <Box flexDirection="column">
           <Box flexDirection="column" borderStyle="round" borderColor={FRAME} paddingX={1}>
             <Box key="folded" flexDirection="row">
-              <Text color={GREEN_TO}>✓ </Text>
+              <Text color={failedSteps > 0 ? PINK : GREEN_TO}>{failedSteps > 0 ? '✗ ' : '✓ '}</Text>
               <Button key="unfold" plain label={summary} hover={{ bold: true }} onPress={() => update($, unfolded, () => true)} />
               <Text dimColor>{fit(`  ${list.goal}`, Math.max(0, inner - 2 - summary.length)).trimEnd()}</Text>
             </Box>
+            {/* What failed stays in view while folded: each failed step and why. */}
+            {list.steps
+              .filter(s => s.status === 'failed')
+              .slice(0, 3)
+              .map((s, i) => (
+                <Text key={`failed-${i}`} color={PINK}>
+                  {`  ✗ ${fit(s.reason ? `${s.text}: ${s.reason}` : s.text, Math.max(0, inner - 4)).trimEnd()}`}
+                </Text>
+              ))}
             {activityRow}
           </Box>
           {below}
@@ -619,6 +652,7 @@ export const register: Register = on => {
 
     const mini = (step: Step, index: number) => {
       if (step.status === 'done') return cells(miniW, i => mix(GREEN_FROM, GREEN_TO, i / (miniW - 1)))
+      if (step.status === 'failed') return cells(miniW, () => PINK, '░')
       if (step.status === 'todo') return [<Text>{' '.repeat(miniW)}</Text>]
       // Working: a violet run that grows and wraps once a second.
       const run = 3 + ((tickNo + index) % (miniW - 3))
@@ -656,7 +690,7 @@ export const register: Register = on => {
             {isFinished ? (
               // Opened out, the finished label folds it back to one line.
               <Box key="fold-label" flexDirection="row">
-                <Text color={GREEN_TO}>▾ </Text>
+                <Text color={failedSteps > 0 ? PINK : GREEN_TO}>▾ </Text>
                 <Button key="fold" plain label={fit(label, labelW - 2)} hover={{ bold: true }} onPress={() => update($, unfolded, () => false)} />
               </Box>
             ) : (
@@ -667,7 +701,7 @@ export const register: Register = on => {
               <Text color={TRACK}>{'█'.repeat(barW - filled)}</Text>
             </Text>
             <Text> </Text>
-            <Text bold color={isFinished ? GREEN_TO : PINK}>
+            <Text bold color={isFinished && failedSteps === 0 ? GREEN_TO : PINK}>
               {pctText}
             </Text>
           </Box>
@@ -726,15 +760,15 @@ export const register: Register = on => {
             const word = statusWord(list.steps, i)
             const isActive = step.status === 'active'
             const calls = step.calls ?? []
-            const failed = calls.filter(c => c.isError).length
+            const isFailed = step.status === 'failed'
             const isPeeked = peeked === i && calls.length > 0
             const { shown, hidden } = peekLines(calls)
             return (
               <Box key={`step-${i}`} flexDirection="column">
                 <Box flexDirection="row">
-                  {/* A step with a failed call is marked on its bullet, not only in its count. */}
-                  <Text color={failed > 0 ? PINK : step.status === 'done' ? GREEN_TO : isActive ? PINK : undefined} dimColor={failed === 0 && step.status === 'todo'}>
-                    {failed > 0 ? '✗ ' : step.status === 'done' ? '✓ ' : isActive ? '● ' : '○ '}
+                  {/* Pink ✗ only for a step Claude marked failed; a tool error alone keeps its bullet. */}
+                  <Text color={isFailed ? PINK : step.status === 'done' ? GREEN_TO : isActive ? PINK : undefined} dimColor={step.status === 'todo'}>
+                    {isFailed ? '✗ ' : step.status === 'done' ? '✓ ' : isActive ? '● ' : '○ '}
                   </Text>
                   {calls.length > 0 ? (
                     // A step with calls is a button: press it to peek at them.
@@ -754,13 +788,19 @@ export const register: Register = on => {
                   <Text> </Text>
                   <Text>{mini(step, i)}</Text>
                   <Text>  </Text>
-                  <Text bold={isActive} color={isActive ? PINK : undefined} dimColor={!isActive}>
+                  <Text bold={isActive} color={isActive || isFailed ? PINK : undefined} dimColor={!isActive && !isFailed}>
                     {fit(word, statusW)}
                   </Text>
-                  <Text color={failed > 0 ? PINK : undefined} dimColor={failed === 0}>
+                  <Text dimColor>
                     {fit(calls.length > 0 ? `${isPeeked ? '▾' : '▸'}${calls.length}` : '', countW)}
                   </Text>
                 </Box>
+                {/* Why it failed, in Claude's words, always in view under the step. */}
+                {isFailed && step.reason ? (
+                  <Text key={`reason-${i}`} color={PINK}>
+                    {`    ↳ ${fit(step.reason, Math.max(0, inner - 6)).trimEnd()}`}
+                  </Text>
+                ) : null}
                 {isPeeked ? (
                   <Box key={`calls-${i}`} flexDirection="column" marginLeft={4}>
                     {hidden > 0 ? <Text dimColor>{`… ${hidden} earlier`}</Text> : null}
@@ -770,14 +810,14 @@ export const register: Register = on => {
                         <Box key={c.id} flexDirection="column">
                           <Box flexDirection="row" justifyContent="space-between">
                             <Text>
-                              <Text color={c.isError ? PINK : BLUE}>{c.isError ? '✗ ' : '› '}</Text>
-                              <Text color={c.isError ? PINK : undefined}>{c.tool}</Text>
+                              <Text color={c.isError ? ORANGE : BLUE}>{c.isError ? '! ' : '› '}</Text>
+                              <Text color={c.isError ? ORANGE : undefined}>{c.tool}</Text>
                               <Text dimColor>{fit(c.detail ? `  ${c.detail}` : '', Math.max(0, inner - 8 - c.tool.length - took.length)).trimEnd()}</Text>
                             </Text>
                             <Text dimColor>{took}</Text>
                           </Box>
                           {c.preview ? (
-                            <Text color={c.isError ? PINK : undefined} dimColor={!c.isError}>
+                            <Text color={c.isError ? ORANGE : undefined} dimColor={!c.isError}>
                               {`    ↳ ${fit(c.preview, Math.max(0, inner - 10)).trimEnd()}`}
                             </Text>
                           ) : null}

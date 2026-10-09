@@ -1,7 +1,9 @@
-export type StepStatus = 'done' | 'active' | 'todo'
+/** `failed`: Claude marked the step's result as not achieved; a tool call's error alone never makes one. */
+export type StepStatus = 'done' | 'active' | 'todo' | 'failed'
 /** One tool call made while a step was open: the tool, what it did, whether it failed, how long it took and the first line it returned. */
 export type Call = { id: string; tool: string; detail: string; isError?: boolean; ms?: number; preview?: string }
-export type Step = { text: string; status: StepStatus; calls?: Call[] }
+/** `reason`, on a failed step: what went wrong, in Claude's words, shown under it. */
+export type Step = { text: string; status: StepStatus; reason?: string; calls?: Call[] }
 /**
  * Tool calls made since the prompt: all of them, the built-in ones by tool name,
  * the MCP ones by server, and the one running right now.

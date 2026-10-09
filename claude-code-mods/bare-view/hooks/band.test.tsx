@@ -65,12 +65,13 @@ test('pressing a step peeks at its tool calls, and again hides them', async ($, 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND } as never)
     expect(await ui.find({ type: 'Text', text: /git status/ })).toBeFalsy()
-    // The step with the failed Read is marked on its bullet before any peek.
-    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeTruthy()
+    // A tool error alone is no failed step: the bullet stays as it is.
+    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeFalsy()
     await ui.press({ key: 'peek-0' })
     expect(await ui.find({ type: 'Text', text: /git status/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /missing\.md/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeTruthy()
+    // In the peek the errored call is flagged with an orange "!".
+    expect(await ui.find({ type: 'Text', text: '! ' })).toBeTruthy()
     // What each call returned, and how long it took, show under it.
     expect(await ui.find({ type: 'Text', text: /↳ nope/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: '0ms' })).toBeTruthy()
@@ -171,6 +172,42 @@ test('a finished checklist folds to one line, and opens out and folds back on a 
     await ui.press({ key: 'fold' })
     expect(await ui.find({ key: 'peek-0' })).toBeFalsy()
     expect(await ui.find({ key: 'unfold' })).toBeTruthy()
+    await ui.unmount()
+  }
+})
+
+test('only a step Claude marks failed gets the pink ✗, folded and opened out', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('tool.call', () => ({ result: 'rejected', isError: true }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Ship it',
+    steps: [{ text: 'Push to main', status: 'active' }, { text: 'Tidy up', status: 'todo' }],
+  } as never)
+  await $.tool.call({ tool: 'Bash', command: 'git push', tool_use_id: 'g1' } as never)
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Ship it',
+    steps: [{ text: 'Push to main', status: 'failed', reason: 'GitHub rejected the push' }, { text: 'Tidy up', status: 'done' }],
+  } as never)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND, props: { ...BAND.props, isWorking: false } } as never)
+    // Folded: the line says a step failed, apart from the tool error count.
+    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeTruthy()
+    // What failed and why stay in view while folded.
+    expect(await ui.find({ type: 'Text', text: /✗ Push to main: GitHub rejected the push/ })).toBeTruthy()
+    await ui.press({ key: 'unfold' })
+    // Opened out: the step reads Failed under its ✗, and the label folds it back.
+    expect(await ui.find({ type: 'Text', text: /Failed/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /↳ GitHub rejected the push/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeTruthy()
+    // Folded back, so the next surface starts folded too.
+    await ui.press({ key: 'fold' })
     await ui.unmount()
   }
 })

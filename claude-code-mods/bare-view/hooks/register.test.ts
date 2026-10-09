@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyGroups, toolLabel } from './register'
+import { PEEK_MAX, isClosed, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyGroups, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -45,7 +45,7 @@ test('parses and scores a checklist', () => {
   expect(typeof list).toBe('object')
   if (typeof list === 'string') return
   expect(list.steps[2]?.status).toBe('todo')
-  expect(progress(list)).toEqual({ done: 1, total: 3, percent: 33 })
+  expect(progress(list)).toEqual({ done: 1, total: 3, percent: 33, failed: 0 })
   expect(bar(1, 3, 6)).toBe('██░░░░')
   expect(bar(0, 0, 4)).toBe('░░░░')
 })
@@ -187,6 +187,34 @@ test('words the approval wait, and folds a finished checklist into one line', ()
     { text: 'A', status: 'done' as const, calls: [{ id: '1', tool: 'Bash', detail: 'ls' }, { id: '2', tool: 'Read', detail: 'x', isError: true }] },
     { text: 'B', status: 'done' as const },
   ]
-  expect(foldedLine({ goal: 'G', steps, tally: { total: 2, mcp: {} } }, '2m 13s')).toBe('All 2 done · 2m 13s · 2 tool calls · 1 failed')
+  expect(foldedLine({ goal: 'G', steps, tally: { total: 2, mcp: {} } }, '2m 13s')).toBe('All 2 done · 2m 13s · 2 tool calls · 1 error')
   expect(foldedLine({ goal: 'G', steps: [{ text: 'A', status: 'done' }] }, '4s')).toBe('All 1 done · 4s')
+})
+
+test('a failed step is over: it fills the bar, ends the checklist and reads Failed', () => {
+  const steps = [
+    { text: 'Push', status: 'failed' as const },
+    { text: 'Tidy', status: 'done' as const },
+  ]
+  const list = { goal: 'G', steps }
+  expect(isClosed(steps[0]!)).toBe(true)
+  expect(progress(list)).toEqual({ done: 2, total: 2, percent: 100, failed: 1 })
+  expect(isInProgress(list)).toBe(false)
+  expect(statusWord(steps, 0)).toBe('Failed')
+  expect(parseChecklist({ goal: 'G', steps: [{ text: 'Push', status: 'failed' }] })).toEqual({ goal: 'G', steps: [{ text: 'Push', status: 'failed' }] })
+  expect(foldedLine({ ...list, tally: { total: 3, mcp: {} } }, '9s')).toBe('1 done · 1 step failed · 9s · 3 tool calls')
+  // A new call goes to the open step, never to a failed one.
+  const later = addCall({ goal: 'G', steps: [{ text: 'A', status: 'failed' }, { text: 'B', status: 'todo' }] }, { id: 'x', tool: 'Bash', detail: '' })
+  expect(later.steps[1]!.calls?.length).toBe(1)
+})
+
+test('a failed step keeps its reason; a peek shows the error, not just the exit code', () => {
+  expect(parseChecklist({ goal: 'G', steps: [{ text: 'Push', status: 'failed', reason: '  GitHub rejected   it ' }] })).toEqual({
+    goal: 'G',
+    steps: [{ text: 'Push', status: 'failed', reason: 'GitHub rejected it' }],
+  })
+  // Only a failed step takes one.
+  expect(parseChecklist({ goal: 'G', steps: [{ text: 'Push', status: 'done', reason: 'x' }] })).toEqual({ goal: 'G', steps: [{ text: 'Push', status: 'done' }] })
+  expect(resultPreview({ text: 'Exit code 128\nfatal: Needed a single revision' })).toBe('fatal: Needed a single revision (exit 128)')
+  expect(resultPreview({ text: 'Exit code 1' })).toBe('Exit code 1')
 })
