@@ -1,5 +1,11 @@
 # Bare View log
 
+## 1.9.1 (2026-10-09)
+
+**Found in use:** Action Items' box showed below Bare View's after a plugin reload. Both mods draw their box and then whatever the other put in the band; whichever loaded outermost ended up on top.
+
+**Changed:** Bare View now draws what other mods put in the band above its own box, so the Action Items box sits above it whatever order the mods load in.
+
 ## 1.9.0 (2026-10-09)
 
 **Asked for:** after a push, the band said "1 failed" even though the push worked (my verification command had errored). How do you tell a genuine failure from a harmless one? Picked: split tool errors from real step failures.

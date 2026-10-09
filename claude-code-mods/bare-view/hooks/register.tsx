@@ -615,6 +615,7 @@ export const register: Register = on => {
       const summary = `${foldedLine(list, timer)} ▸`
       return (
         <Box flexDirection="column">
+          {below}
           <Box flexDirection="column" borderStyle="round" borderColor={FRAME} paddingX={1}>
             <Box key="folded" flexDirection="row">
               <Text color={failedSteps > 0 ? PINK : GREEN_TO}>{failedSteps > 0 ? '✗ ' : '✓ '}</Text>
@@ -632,7 +633,6 @@ export const register: Register = on => {
               ))}
             {activityRow}
           </Box>
-          {below}
         </Box>
       )
     }
@@ -665,6 +665,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
+        {below}
         <Box flexDirection="column" borderStyle="round" borderColor={FRAME} paddingX={1}>
           <Box flexDirection="row" justifyContent="space-between">
             <Text>
@@ -830,7 +831,6 @@ export const register: Register = on => {
             )
           })}
         </Box>
-        {below}
       </Box>
     )
   })
