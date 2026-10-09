@@ -6,7 +6,7 @@ Six mods for Claude Code. They work in the terminal and in the desktop app's Cod
 | --- | --- |
 | [Bare View](#bare-view) | A live task checklist above the prompt, with a tally of every tool call and a peek at each step's calls; hides the tool-call noise |
 | [Control Panel](#control-panel) | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Action Steps](#action-steps) | Follow-up steps (run this, sign in, check that) in a side pane you can tick off |
+| [Action Items](#action-items) | Everything Claude needs from you, decisions apart from actions, in a box above the prompt |
 | [Guard Rails](#guard-rails) | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
 | [Context Lens](#context-lens) | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -24,7 +24,7 @@ Then install the mods you want, one line each (press Enter for the user scope):
 ```
 /plugin install bare-view@teddymazrin-mods
 /plugin install control-panel@teddymazrin-mods
-/plugin install action-steps@teddymazrin-mods
+/plugin install action-items@teddymazrin-mods
 /plugin install guard-rails@teddymazrin-mods
 /plugin install context-handoff@teddymazrin-mods
 /plugin install context-lens@teddymazrin-mods
@@ -67,23 +67,16 @@ Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
   - **Reload plugins ▸ Run:** runs `/reload-plugins`
   - **Clear chat ▸ Run:** runs `/clear` after asking you to confirm
 
-## Action Steps
+## Action Items
 
-When a task leaves you something to do yourself (run the script, set a parameter, check the portal), Claude sends the steps to a side pane that opens by itself, so they don't get lost in the chat:
+*Formerly Action Steps. If you had `action-steps` installed, uninstall it and install `action-items`.*
 
-```
-Check my Azure roles                       3 steps
-1: Install the Az module
-     Install-Module Az -Scope CurrentUser   [Copy]
-2: Run the script with your tenant ID
-     .\Get-MyAzureRoles.ps1 -TenantId "<id>" [Copy]
-3: Sign in when the browser opens
-```
+Whenever Claude needs something from you, it goes in a box above the prompt instead of getting lost in the chat, split in two:
 
-- Click a number to tick that step off (the count then reads `3 steps · 1 done`); **Copy** puts its command on the clipboard
-- Earlier tasks stay listed under **Earlier**, kept across sessions (the last 8)
-- The pane docks on the right in fullscreen from 110 columns; in a narrower window the steps show in a box above the prompt instead. `/action-steps` opens the pane by hand
-- Close it with ✕; it opens again the next time there are new steps
+- **? Decide**: questions for you. Click an option and your answer goes back to Claude as your reply; with several questions, it waits until all are answered and sends them together. **Other…** or **Answer…** puts the question in the prompt box for you to type your own
+- **▶ Do**: things you do yourself (run a script, sign in, check a setting). Click the number to tick one off; **Copy** copies its command. When the box is too short to show every action in full, click an action's title to open it
+- If Claude ends a reply asking you something without using the box, the questions are put there anyway
+- Typing a reply yourself also settles the open questions. The box closes when everything is answered and done, or with ✕; `/action-items` brings back what is still open
 
 ## Guard Rails
 
@@ -165,7 +158,7 @@ Run these in a regular terminal (PowerShell, bash). Don't run them at the Claude
 claude plugin marketplace update teddymazrin-mods
 claude plugin update bare-view@teddymazrin-mods
 claude plugin update control-panel@teddymazrin-mods
-claude plugin update action-steps@teddymazrin-mods
+claude plugin update action-items@teddymazrin-mods
 claude plugin update guard-rails@teddymazrin-mods
 claude plugin update context-handoff@teddymazrin-mods
 claude plugin update context-lens@teddymazrin-mods

@@ -1,0 +1,11 @@
+{
+  "name": "action-items",
+  "version": "4.1.2",
+  "description": "Action Items box (formerly Action Steps). Everything Claude needs from you, decisions to make and actions to do, in one box above the prompt: click an option to answer, tick off what you did",
+  "author": {
+    "name": "Teddymazrin"
+  },
+  "homepage": "https://github.com/Teddymazrin/Claude/tree/main/claude-code-mods",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

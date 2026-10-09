@@ -16,9 +16,9 @@
       "description": "Status row, model and effort picker, settings and quick actions"
     },
     {
-      "name": "action-steps",
-      "source": "./claude-code-mods/action-steps",
-      "description": "Numbered follow-up steps in a side pane that opens by itself after a task"
+      "name": "action-items",
+      "source": "./claude-code-mods/action-items",
+      "description": "Everything Claude needs from you, decisions apart from actions, in a box above the prompt (formerly action-steps)"
     },
     {
       "name": "guard-rails",
