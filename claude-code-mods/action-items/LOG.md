@@ -1,5 +1,14 @@
 # Action Items log
 
+## 4.5.0 (2026-10-09)
+
+**Asked for:** cut the mods' token cost; picked: drop the per-message reminders only.
+
+**Changed:**
+- The one-line reminder added to every message you send is gone once the session's system prompt carries the mod's instructions. It still goes along in a session the mod joined partway through, until a system prompt has the instructions
+- How to load the tool (ToolSearch) moved from the reminder into the instructions
+- Saves about 35 tokens per message, and they no longer pile up in the history
+
 ## 4.4.0 (2026-10-09)
 
 **Asked for:** Claude wrote a PowerShell script and ended with "run it with `-WhatIf` first" and the commands, but never used the box. Add an end-of-turn check that nudges Claude when it forgets.

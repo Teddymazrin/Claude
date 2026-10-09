@@ -47,6 +47,8 @@ declare module 'claude-code' {
       showDone: boolean
       /** The asks whose info (why, how-to, context) is opened, as "a:<set id>:<index>" or "d:<set id>:<index>". */
       info: string[]
+      /** True once a system prompt this session carries the instructions, so prompts skip the reminder. */
+      composed: boolean
     }
   }
 }

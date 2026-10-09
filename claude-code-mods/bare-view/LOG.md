@@ -1,5 +1,14 @@
 # Bare View log
 
+## 1.10.0 (2026-10-09)
+
+**Asked for:** cut the mods' token cost; picked: drop the per-message reminders only.
+
+**Changed:**
+- The one-line reminder added to every message you send is gone once the session's system prompt carries the mod's instructions. It still goes along in a session the mod joined partway through, until a system prompt has the instructions
+- How to load the tool (ToolSearch) moved from the reminder into the instructions
+- Saves about 25 tokens per message, and they no longer pile up in the history
+
 ## 1.9.1 (2026-10-09)
 
 **Found in use:** Action Items' box showed below Bare View's after a plugin reload. Both mods draw their box and then whatever the other put in the band; whichever loaded outermost ended up on top.

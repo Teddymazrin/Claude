@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, isClosed, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, statusWord, tallyGroups, toolLabel } from './register'
+import { PEEK_MAX, isClosed, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -217,4 +217,10 @@ test('a failed step keeps its reason; a peek shows the error, not just the exit 
   expect(parseChecklist({ goal: 'G', steps: [{ text: 'Push', status: 'done', reason: 'x' }] })).toEqual({ goal: 'G', steps: [{ text: 'Push', status: 'done' }] })
   expect(resultPreview({ text: 'Exit code 128\nfatal: Needed a single revision' })).toBe('fatal: Needed a single revision (exit 128)')
   expect(resultPreview({ text: 'Exit code 1' })).toBe('Exit code 1')
+})
+
+test('the reminder goes along only until a system prompt carries the instructions', () => {
+  expect(withReminder(['x'], false)).toEqual(['x', REMINDER])
+  expect(withReminder(['x'], true)).toEqual(['x'])
+  expect(withReminder([], true)).toEqual([])
 })

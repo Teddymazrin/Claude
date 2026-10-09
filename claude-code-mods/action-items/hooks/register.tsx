@@ -19,6 +19,8 @@ const openAction = atom({ plugin: 'action-items', key: 'focus' } as const, null)
 const showDone = atom({ plugin: 'action-items', key: 'showDone' } as const, false)
 // The asks whose info is opened: "a:<set id>:<index>" for an action, "d:..." for a decision.
 const info = atom({ plugin: 'action-items', key: 'info' } as const, [] as string[])
+// True once a system prompt carries the instructions; until then each prompt carries the reminder.
+const composed = atom({ plugin: 'action-items', key: 'composed' } as const, false)
 
 // One accent, Claude's orange, on neutral greys: orange frame and header, near-white text,
 // charcoal buttons that turn orange on hover.
@@ -36,7 +38,7 @@ const C = {
 
 const INSTRUCTIONS = `# Action Items box
 The user keeps an Action Items box above the prompt for everything you need from them. It shows decisions (questions they answer) apart from actions (things they do themselves), so they never have to dig through your reply to find what you are waiting on.
-- Whenever you end a turn needing something from the user, call \`${TOOL_ID}\` before your final answer. That covers:
+- Whenever you end a turn needing something from the user, call \`${TOOL_ID}\` before your final answer (load it with ToolSearch "select:${TOOL_ID}" if it is not loaded). That covers:
   - \`decisions\`: any question you want answered, a choice between approaches, information only they have, a go-ahead. Give 2-4 short \`options\` when the answer is one of a few choices; they click one and it comes back to you as their reply. Leave \`options\` out for an open question. Add a \`detail\` line when the choice needs context (what each option means, what you'd recommend).
   - \`actions\`: what they must do themselves: run a script, fill in a parameter, sign in, check a portal setting, restart something. Only what actually needs them; never filler like "look over the code" or "test the button" with nothing specific to find. Write each so they could do it without reading your reply:
     - \`text\`: the action, imperative and specific: where and what ("Run the setup script in PowerShell", not "Check it works").
@@ -50,6 +52,9 @@ The user keeps an Action Items box above the prompt for everything you need from
 - Skip it only when you need nothing from the user.`
 
 export const REMINDER = `[Action Items] Anything you need from the user (decisions or actions) goes in the box via ${TOOL_ID} (ToolSearch "select:${TOOL_ID}" if not loaded).`
+
+/** A prompt's context: the reminder only while no system prompt carries the instructions (a session the mod joined mid-way). */
+export const withReminder = (context: readonly string[], isComposed: boolean) => (isComposed ? [...context] : [...context, REMINDER])
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 
@@ -496,9 +501,10 @@ export const register: Register = on => {
   })
 
   on('prompt.compose', async ($, e, next) => {
-    const composed = await next(e)
+    const out = await next(e)
+    await update($, composed, () => true)
     return {
-      sections: [...composed.sections, { id: `${PLUGIN}:instructions`, text: INSTRUCTIONS, scope: 'session' as const }],
+      sections: [...out.sections, { id: `${PLUGIN}:instructions`, text: INSTRUCTIONS, scope: 'session' as const }],
     }
   })
 
@@ -506,7 +512,7 @@ export const register: Register = on => {
   // not yet sent go along with it.
   on('prompt.submit', async ($, e, next) => {
     if (e.text.trim().startsWith('/')) return next(e)
-    const context = [...(e.context ?? []), REMINDER]
+    const context = withReminder(e.context ?? [], await read($, composed))
     // A typed reply settles only what it answers: answers typed after "Other…" are read from it,
     // clicked ones go along, and Claude is told which questions still wait, to clear those it answered.
     if (e.origin.kind === 'composer') {

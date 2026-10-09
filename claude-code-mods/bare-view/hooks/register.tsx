@@ -15,6 +15,8 @@ const peek = atom({ plugin: 'bare-view', key: 'peek' } as const, null)
 const openTally = atom({ plugin: 'bare-view', key: 'openTally' } as const, [] as TallyKey[])
 const activity = atom({ plugin: 'bare-view', key: 'activity' } as const, null as Activity | null)
 const unfolded = atom({ plugin: 'bare-view', key: 'unfolded' } as const, false)
+// True once a system prompt carries the instructions; until then each prompt carries the reminder.
+const composed = atom({ plugin: 'bare-view', key: 'composed' } as const, false)
 
 // Palette, after the reference: pink frame, orange-to-pink progress, green done, violet working.
 const FRAME = '#e0457b'
@@ -29,7 +31,7 @@ const TRACK = '#2a2433'
 
 const INSTRUCTIONS = `# Bare View progress checklist
 The user does not see your tool calls or the text you write while a checklist is in progress; they see a checklist drawn from the \`${TOOL_ID}\` tool.
-- At the start of every request that needs any work (reading, searching, editing, running), call \`${TOOL_ID}\` first with a short \`goal\` and 2-7 concrete \`steps\`, the first one \`active\`, the rest \`todo\`.
+- At the start of every request that needs any work (reading, searching, editing, running), call \`${TOOL_ID}\` first (load it with ToolSearch "select:${TOOL_ID}" if it is not loaded) with a short \`goal\` and 2-7 concrete \`steps\`, the first one \`active\`, the rest \`todo\`.
 - Call it again only when the plan changes; do not send an update after every step.
 - Mark a step \`failed\` only when its result did not happen and you are not fixing it this turn (a push rejected, tests still failing, a file not written), and give it a \`reason\`: what went wrong, in a few plain words the user understands ("Branch not found", "GitHub rejected the push: behind main"). A tool call that errored but was retried, or did not matter, does not make a step failed.
 - Before your final answer, call it with every step \`done\` (or \`failed\`). Only text after that call is shown.
@@ -38,6 +40,9 @@ The user does not see your tool calls or the text you write while a checklist is
 - Skip it for a pure question you can answer without tools.`
 
 export const REMINDER = `[Bare View] Use the checklist (ToolSearch "select:${TOOL_ID}" if not loaded); final answer = short outcome.`
+
+/** A prompt's context: the reminder only while no system prompt carries the instructions (a session the mod joined mid-way). */
+export const withReminder = (context: readonly string[], isComposed: boolean) => (isComposed ? [...context] : [...context, REMINDER])
 
 const STATUSES: readonly StepStatus[] = ['done', 'active', 'todo', 'failed']
 
@@ -372,19 +377,19 @@ export const register: Register = on => {
   })
 
   on('prompt.compose', async ($, e, next) => {
-    const composed = await next(e)
+    const out = await next(e)
+    await update($, composed, () => true)
     return {
       sections: [
-        ...composed.sections,
+        ...out.sections,
         { id: `${PLUGIN}:instructions`, text: INSTRUCTIONS, scope: 'session' as const },
       ],
     }
   })
 
-  // A new prompt: show it as the goal until the model sends its plan, and remind
-  // the model of the tool. The system prompt section alone misses a session the
-  // mod joined mid-way (that prompt was rendered before it loaded), and the tool
-  // is deferred, so the reminder also says how to load it.
+  // A new prompt: show it as the goal until the model sends its plan. The reminder
+  // goes along only in a session the mod joined mid-way, whose system prompt was
+  // rendered before it loaded; once one carries the instructions it stops.
   on('prompt.submit', async ($, e, next) => {
     const goal = firstLine(e.text)
     if (!goal) return next(e)
@@ -396,7 +401,7 @@ export const register: Register = on => {
     await update($, peek, () => null)
     await update($, openTally, () => [])
     await update($, unfolded, () => false)
-    return next({ ...e, context: [...(e.context ?? []), REMINDER] })
+    return next({ ...e, context: withReminder(e.context ?? [], await read($, composed)) })
   }).catch(($, e, next) => next(e))
 
   // Every turn shows something. A typed prompt already reset the band; a slash

@@ -1,6 +1,6 @@
 {
   "name": "action-items",
-  "version": "4.4.0",
+  "version": "4.5.0",
   "description": "Action Items box (formerly Action Steps). Everything Claude needs from you, decisions to make and actions to do, in one box above the prompt: click an option to answer, tick off what you did",
   "author": {
     "name": "Teddymazrin"

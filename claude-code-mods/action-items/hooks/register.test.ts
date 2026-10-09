@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, findQuestions, findsToRun, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, startTyping, toggleAction } from './register'
+import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, findQuestions, findsToRun, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -136,4 +136,10 @@ test('clearSet drops one set by id, open or not', () => {
   expect(clearSet([b, a], 'a')).toEqual([b])
   expect(clearSet([b, a], 'b')).toEqual([a])
   expect(clearSet([a], 'missing')).toEqual([a])
+})
+
+test('the reminder goes along only until a system prompt carries the instructions', () => {
+  expect(withReminder(['x'], false)).toEqual(['x', REMINDER])
+  expect(withReminder(['x'], true)).toEqual(['x'])
+  expect(withReminder([], true)).toEqual([])
 })

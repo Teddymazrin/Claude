@@ -31,6 +31,8 @@ declare module 'claude-code' {
       activity: Activity | null
       /** True when a finished checklist is opened out in full; finished, it folds to one line. */
       unfolded: boolean
+      /** True once a system prompt this session carries the instructions, so prompts skip the reminder. */
+      composed: boolean
     }
   }
 }
