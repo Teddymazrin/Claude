@@ -18,7 +18,12 @@
     {
       "name": "action-items",
       "source": "./claude-code-mods/action-items",
-      "description": "Everything Claude needs from you, decisions apart from actions, in a box above the prompt (formerly action-steps)"
+      "description": "Everything Claude needs from you, decisions apart from actions, in a box above the prompt (replaces action-steps)"
+    },
+    {
+      "name": "action-steps",
+      "source": "./claude-code-mods/action-steps",
+      "description": "Being replaced by action-items. Numbered follow-up steps in a side pane; kept while the switch is checked"
     },
     {
       "name": "guard-rails",

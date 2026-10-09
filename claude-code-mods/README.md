@@ -1,12 +1,13 @@
 # Claude Code mods
 
-Six mods for Claude Code. They work in the terminal and in the desktop app's Code tab.
+Six mods for Claude Code (plus Action Steps, which Action Items is replacing). They work in the terminal and in the desktop app's Code tab.
 
 | Mod | What it does |
 | --- | --- |
 | [Bare View](#bare-view) | A live task checklist above the prompt, with a tally of every tool call and a peek at each step's calls; hides the tool-call noise |
 | [Control Panel](#control-panel) | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Action Items](#action-items) | Everything Claude needs from you, decisions apart from actions, in a box above the prompt |
+| [Action Steps](#action-steps-being-replaced) | *Being replaced by Action Items.* Follow-up steps in a side pane |
 | [Guard Rails](#guard-rails) | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
 | [Context Lens](#context-lens) | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -69,14 +70,42 @@ Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
 ## Action Items
 
-*Formerly Action Steps. If you had `action-steps` installed, uninstall it and install `action-items`.*
+Whenever Claude needs something from you, it goes in one box above the prompt instead of getting lost in the chat: questions you answer, apart from things you do yourself. It replaces Action Steps and its side pane.
 
-Whenever Claude needs something from you, it goes in a box above the prompt instead of getting lost in the chat, split in two:
+The box has two tabs, so it stays small:
 
-- **? Decide**: questions for you. Click an option and your answer goes back to Claude as your reply; with several questions, it waits until all are answered and sends them together. **Other…** or **Answer…** puts the question in the prompt box for you to type your own
-- **▶ Do**: things you do yourself (run a script, sign in, check a setting). Click the number to tick one off; **Copy** copies its command. When the box is too short to show every action in full, click an action's title to open it
-- If Claude ends a reply asking you something without using the box, the questions are put there anyway
-- Typing a reply yourself also settles the open questions. The box closes when everything is answered and done, or with ✕; `/action-items` brings back what is still open
+- **? Decide**: questions for you. The first waiting question opens with a line of context and its options; the rest wait one line each, and answered ones fold into "✓ N answered". Click an option and your answer goes back to Claude as your reply; with several questions it waits until all are answered and sends them together. **Other…** (or **Answer…** for an open question) puts the question in the prompt box for you to type your own; sending it blank keeps the question open
+- **▶ Do**: things you do yourself, numbered. Each says what to do, **Why:** it matters, how to tell it worked, and the exact command with a **Copy** button. Click the number to tick it off
+
+The box opens on Decide while a question waits and moves to Do once they're answered; click a tab to switch.
+
+**In a short window** the Do tab first drops its blank lines, then opens one action in full and folds the rest to one row each (title · why · command, with Copy). Click a folded action's title (**▸**) to open it, and the open one's title (**▾**) to fold it. Ticked actions fold into **✓ N done ▸ show**, which lists them again so you can untick one.
+
+**Answering by typing:** a typed message doesn't wipe the box. Claude is told which questions are still open and clears only the ones your message answered.
+
+**Safety net:** if Claude ends a reply asking you something without using the box, the questions are put there anyway.
+
+**Closing it:** the box closes when everything is answered and done, or with ✕. When one set is done, the box moves on to the next one still waiting. `/action-items` brings back what's still open.
+
+**The look:** a Claude-orange frame and header, near-white text, charcoal buttons that turn orange on hover.
+
+### Moving from Action Steps
+
+Action Items is a new install, not an update: `action-steps` was renamed, so `claude plugin update action-steps@teddymazrin-mods` won't move you over. In a regular terminal:
+
+```
+claude plugin marketplace update teddymazrin-mods
+claude plugin install action-items@teddymazrin-mods
+claude plugin uninstall action-steps@teddymazrin-mods
+```
+
+Restart Claude Code (or run `/reload-plugins`). Steps saved by Action Steps don't carry over.
+
+## Action Steps (being replaced)
+
+*Kept in the marketplace while Action Items is checked on every machine; it will be removed after that. New installs should use [Action Items](#action-items).*
+
+When a task leaves you something to do yourself, Claude sends the steps to a side pane that opens by itself. The pane docks on the right in fullscreen from 110 columns; in a narrower window the steps show in a box above the prompt. `/action-steps` opens the pane by hand.
 
 ## Guard Rails
 
