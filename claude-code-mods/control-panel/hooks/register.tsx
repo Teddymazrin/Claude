@@ -611,8 +611,8 @@ export const register: Register = on => {
     )
 
     return (
-      // Black floor to ceiling: the pane's own grey never shows below the frame.
-      <Box flexDirection="column" width="100%" height="100%" backgroundColor={BLACK}>
+      // Black floor to ceiling: the body only grows to fit its tree, so the box asks for every row the dock has.
+      <Box flexDirection="column" width={e.props.bodyColumns} minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined} backgroundColor={BLACK}>
         <Box flexDirection="column" borderStyle="round" borderColor={FRAME} backgroundColor={BLACK} paddingX={1}>
           <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
             <Box flexDirection="row">
