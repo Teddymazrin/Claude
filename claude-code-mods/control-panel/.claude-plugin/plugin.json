@@ -1,6 +1,6 @@
 {
   "name": "control-panel",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "Model, effort and settings. A status row under the prompt (plan, model, effort, context, usage) and a footer button that opens a panel for picking the model and effort, switching Bare View and Guard Rails on or off, and quick actions",
   "author": {
     "name": "Teddymazrin"

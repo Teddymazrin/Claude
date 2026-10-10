@@ -19,6 +19,10 @@ const MAUVE = '#a8729a'
 const GREEN = '#1f9d63'
 const SLATE = '#2a2f3a'
 const RED = '#e5484d'
+// The pane's dark look: near-black ground, light ink, grey for the quiet parts.
+const BLACK = '#0c0c0e'
+const INK = '#e8e6e3'
+const MUTED = '#7d8190'
 
 const mods = atom({ plugin: 'control-panel', key: 'mods' } as const, [])
 const disabled = atom({ plugin: 'control-panel', key: 'disabled' } as const, [])
@@ -505,41 +509,46 @@ export const register: Register = on => {
     const model = c.model ?? s?.model
     const effort = c.effort ?? s?.effort
     const now = await $.clock.now()
-    const sep = <Text dimColor> | </Text>
+    // One piece of the row, kept whole: a narrow terminal wraps the row between pieces, never inside one.
+    const piece = (key: string, children: RenderChildren, isFirst = false) => (
+      <Box key={key} flexDirection="row" flexShrink={0}>
+        {!isFirst && <Text dimColor> | </Text>}
+        {children}
+      </Box>
+    )
     const ctx = m.context ?? 0
     const bar = meterBar(ctx)
     const ctxColor = ctx >= 75 ? ORANGE : ctx >= 50 ? GOLD : GREEN
     // The next request's model: the panel's pick, else the session's (which follows /model).
     const nextModel = c.model ?? (await $.session.model().catch(() => undefined))
     const cache = cacheText(await read($, lastCall), cacheTtlMs(m.plan), now, nextModel)
-    // A usage window: dim label, bright percent, dim reset, after its own separator.
+    // A usage window: dim label, bright percent, dim reset.
     const window = (label: string, l: Limit | null) => {
       if (!l) return null
       const reset = resetText(l.resetsAt, now)
-      return [
-        <Text key={`${label}-sep`} dimColor> | </Text>,
+      return piece(label, [
         <Text key={`${label}-label`} dimColor>{`${label} `}</Text>,
         <Text key={`${label}-pct`} color={limitColor(l.percent)}>{`${Math.round(l.percent)}%`}</Text>,
         reset ? <Text key={`${label}-reset`} dimColor>{` · resets ${reset}`}</Text> : null,
-      ]
+      ])
     }
 
     return (
       <Box flexDirection="column" alignItems="flex-start">
-        <Box key="control-panel-status" flexDirection="row">
-          <Text color={GOLD}>{m.plan ?? '…'}</Text>
-          {sep}
-          <Text bold color={ORANGE}>{model ? modelName(model) : '…'}</Text>
-          {sep}
-          <Text dimColor>effort </Text>
-          <Text color={MAUVE}>{effort ? effortName(effort) : '…'}</Text>
-          {sep}
-          <Text dimColor>ctx </Text>
-          <Text color={ctxColor}>{bar.filled}</Text>
-          <Text color={SLATE}>{bar.empty}</Text>
-          <Text color={ctxColor}> {m.context === null ? '…' : `${ctx}%`}</Text>
-          {cache && sep}
-          {cache && <Text color={RED}>{cache}</Text>}
+        <Box key="control-panel-status" flexDirection="row" flexWrap="wrap">
+          {piece('plan', <Text color={GOLD}>{m.plan ?? '…'}</Text>, true)}
+          {piece('model', <Text bold color={ORANGE}>{model ? modelName(model) : '…'}</Text>)}
+          {piece('effort', [
+            <Text key="effort-label" dimColor>effort </Text>,
+            <Text key="effort-value" color={MAUVE}>{effort ? effortName(effort) : '…'}</Text>,
+          ])}
+          {piece('ctx', [
+            <Text key="ctx-label" dimColor>ctx </Text>,
+            <Text key="ctx-filled" color={ctxColor}>{bar.filled}</Text>,
+            <Text key="ctx-empty" color={SLATE}>{bar.empty}</Text>,
+            <Text key="ctx-pct" color={ctxColor}> {m.context === null ? '…' : `${ctx}%`}</Text>,
+          ])}
+          {cache && piece('cache', <Text color={RED}>{cache}</Text>)}
           {window('usage', m.limit)}
           {window('weekly', m.week)}
         </Box>
@@ -580,14 +589,16 @@ export const register: Register = on => {
     // An option in a row: filled with `fill` when chosen, plain otherwise.
     const option = (key: string, label: string, isChosen: boolean, fill: string, hotkey: string, onPress: () => unknown) => (
       <Box key={key} backgroundColor={isChosen ? fill : undefined} paddingX={1} hover={{ backgroundColor: isChosen ? fill : SLATE }}>
-        <Button key={`${key}-btn`} plain label={label} hotkey={hotkey || undefined} hover={{ bold: true }} onPress={onPress} />
+        <Button key={`${key}-btn`} plain label={label} hotkey={hotkey || undefined} hover={{ bold: true }} onPress={onPress}>
+          <Text color={INK}>{label}</Text>
+        </Button>
       </Box>
     )
 
     const pickerRow = (label: string, children: RenderChildren) => (
       <Box flexDirection="row">
         <Box width={8} flexShrink={0}>
-          <Text dimColor>{label}</Text>
+          <Text color={MUTED}>{label}</Text>
         </Box>
         <Box flexDirection="row" flexWrap="wrap">{children}</Box>
       </Box>
@@ -595,18 +606,18 @@ export const register: Register = on => {
 
     const section = (label: string) => (
       <Box marginTop={1} marginBottom={1} paddingLeft={2}>
-        <Text dimColor>{spaced(label)}</Text>
+        <Text color={MUTED}>{spaced(label)}</Text>
       </Box>
     )
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={FRAME} paddingX={1}>
+      <Box flexDirection="column" borderStyle="round" borderColor={FRAME} backgroundColor={BLACK} paddingX={1}>
         <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
           <Box flexDirection="row">
             <Text color={ORANGE}>◆  </Text>
             <Text bold color={GOLD}>{spaced(TITLE)}</Text>
           </Box>
-          <Text dimColor>{currentText(c, s)}</Text>
+          <Text color={MUTED}>{currentText(c, s)}</Text>
         </Box>
 
         {pickerRow(
@@ -619,19 +630,21 @@ export const register: Register = on => {
         )}
 
         {section('Settings')}
-        {settingRows(list).length === 0 && <Text dimColor>  Bare View and Guard Rails are not installed.</Text>}
+        {settingRows(list).length === 0 && <Text color={MUTED}>  Bare View and Guard Rails are not installed.</Text>}
         {settingRows(list).map(({ mod, line }) => {
           const isOn = !off.includes(mod.name)
           return (
             <Box key={mod.name} flexDirection="row" hover={{ backgroundColor: SLATE }}>
               <Box width={18} flexShrink={0}>
-                <Text bold={isOn} wrap="truncate-end">{titled(mod.name)}</Text>
+                <Text bold={isOn} color={isOn ? INK : MUTED} wrap="truncate-end">{titled(mod.name)}</Text>
               </Box>
               <Box flexGrow={1} flexShrink={1} marginRight={1}>
-                <Text dimColor wrap="truncate-end">{line}</Text>
+                <Text color={MUTED} wrap="truncate-end">{line}</Text>
               </Box>
               <Box width={8} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
-                <Button key={`toggle-${mod.name}`} plain label={isOn ? '● On' : '○ Off'} hover={{ bold: true }} onPress={() => toggle($, mod)} />
+                <Button key={`toggle-${mod.name}`} plain label={isOn ? '● On' : '○ Off'} hover={{ bold: true }} onPress={() => toggle($, mod)}>
+                  <Text color={INK}>{isOn ? '● On' : '○ Off'}</Text>
+                </Button>
               </Box>
             </Box>
           )
@@ -641,13 +654,15 @@ export const register: Register = on => {
         {visibleQuick(commands).map(q => (
           <Box key={`quick-${q.command}`} flexDirection="row" hover={{ backgroundColor: SLATE }}>
             <Box width={18} flexShrink={0}>
-              <Text bold wrap="truncate-end">{q.label}</Text>
+              <Text bold color={INK} wrap="truncate-end">{q.label}</Text>
             </Box>
             <Box flexGrow={1} flexShrink={1} marginRight={1}>
-              <Text dimColor wrap="truncate-end">{q.blurb}</Text>
+              <Text color={MUTED} wrap="truncate-end">{q.blurb}</Text>
             </Box>
             <Box width={8} flexShrink={0} backgroundColor={GOLD} paddingX={1}>
-              <Button key={`quick-btn-${q.command}`} plain label={`▸ ${q.verb}`} hover={{ bold: true }} onPress={() => runQuick($, q)} />
+              <Button key={`quick-btn-${q.command}`} plain label={`▸ ${q.verb}`} hover={{ bold: true }} onPress={() => runQuick($, q)}>
+                <Text color={BLACK}>{`▸ ${q.verb}`}</Text>
+              </Button>
             </Box>
           </Box>
         ))}
