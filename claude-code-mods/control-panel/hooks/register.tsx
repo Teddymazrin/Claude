@@ -436,6 +436,15 @@ async function openPane($: EngineInterface) {
   await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true, columns: PANE_COLUMNS })
 }
 
+// The footer chip: closes the pane when it's the one showing, else opens it or brings it to the front.
+async function togglePane($: EngineInterface) {
+  const mine = (await $.ui.panes().catch(() => [])).find(pane => pane.id === PANE)
+  if (mine?.isShown) return $.ui.close({ id: PANE })
+  // Opening an id that is already a tab only retitles it; closing it first lets the open raise it.
+  if (mine) await $.ui.close({ id: PANE }).catch(() => {})
+  return openPane($)
+}
+
 export const register: Register = on => {
   // Keeps switched-off mods out of the chain at every load and reload.
   // Also notes where each mod lives, so the pane lists it wherever it loaded from.
@@ -572,7 +581,7 @@ export const register: Register = on => {
       <Box flexDirection="column" alignItems="flex-end">
         {!isEmptyEngine && below}
         <Box key="control-panel-chip" backgroundColor={ORANGE} paddingX={1}>
-          <Button key="open-control-panel" plain label={label} hover={{ bold: true }} onPress={() => openPane($)} />
+          <Button key="open-control-panel" plain label={label} hover={{ bold: true }} onPress={() => togglePane($)} />
         </Box>
       </Box>
     )
