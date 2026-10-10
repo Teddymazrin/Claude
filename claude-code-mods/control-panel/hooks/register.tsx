@@ -611,61 +611,64 @@ export const register: Register = on => {
     )
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={FRAME} backgroundColor={BLACK} paddingX={1}>
-        <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-          <Box flexDirection="row">
-            <Text color={ORANGE}>◆  </Text>
-            <Text bold color={GOLD}>{spaced(TITLE)}</Text>
+      // Black floor to ceiling: the pane's own grey never shows below the frame.
+      <Box flexDirection="column" width="100%" height="100%" backgroundColor={BLACK}>
+        <Box flexDirection="column" borderStyle="round" borderColor={FRAME} backgroundColor={BLACK} paddingX={1}>
+          <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
+            <Box flexDirection="row">
+              <Text color={ORANGE}>◆  </Text>
+              <Text bold color={GOLD}>{spaced(TITLE)}</Text>
+            </Box>
+            <Text color={MUTED}>{currentText(c, s)}</Text>
           </Box>
-          <Text color={MUTED}>{currentText(c, s)}</Text>
-        </Box>
 
-        {pickerRow(
-          'MODEL',
-          MODELS.map(m => option(`model-${m.hotkey}`, m.label, model === m.id, ORANGE, m.hotkey, () => pick($, { model: m.id }))),
-        )}
-        {pickerRow(
-          'EFFORT',
-          EFFORTS.map(f => option(`effort-${f.hotkey}`, f.label, effort === f.id, MAUVE, f.hotkey, () => pick($, { effort: f.id }))),
-        )}
+          {pickerRow(
+            'MODEL',
+            MODELS.map(m => option(`model-${m.hotkey}`, m.label, model === m.id, ORANGE, m.hotkey, () => pick($, { model: m.id }))),
+          )}
+          {pickerRow(
+            'EFFORT',
+            EFFORTS.map(f => option(`effort-${f.hotkey}`, f.label, effort === f.id, MAUVE, f.hotkey, () => pick($, { effort: f.id }))),
+          )}
 
-        {section('Settings')}
-        {settingRows(list).length === 0 && <Text color={MUTED}>  Bare View and Guard Rails are not installed.</Text>}
-        {settingRows(list).map(({ mod, line }) => {
-          const isOn = !off.includes(mod.name)
-          return (
-            <Box key={mod.name} flexDirection="row" hover={{ backgroundColor: SLATE }}>
+          {section('Settings')}
+          {settingRows(list).length === 0 && <Text color={MUTED}>  Bare View and Guard Rails are not installed.</Text>}
+          {settingRows(list).map(({ mod, line }) => {
+            const isOn = !off.includes(mod.name)
+            return (
+              <Box key={mod.name} flexDirection="row" hover={{ backgroundColor: SLATE }}>
+                <Box width={18} flexShrink={0}>
+                  <Text bold={isOn} color={isOn ? INK : MUTED} wrap="truncate-end">{titled(mod.name)}</Text>
+                </Box>
+                <Box flexGrow={1} flexShrink={1} marginRight={1}>
+                  <Text color={MUTED} wrap="truncate-end">{line}</Text>
+                </Box>
+                <Box width={8} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
+                  <Button key={`toggle-${mod.name}`} plain label={isOn ? '● On' : '○ Off'} hover={{ bold: true }} onPress={() => toggle($, mod)}>
+                    <Text color={INK}>{isOn ? '● On' : '○ Off'}</Text>
+                  </Button>
+                </Box>
+              </Box>
+            )
+          })}
+
+          {section('Actions')}
+          {visibleQuick(commands).map(q => (
+            <Box key={`quick-${q.command}`} flexDirection="row" hover={{ backgroundColor: SLATE }}>
               <Box width={18} flexShrink={0}>
-                <Text bold={isOn} color={isOn ? INK : MUTED} wrap="truncate-end">{titled(mod.name)}</Text>
+                <Text bold color={INK} wrap="truncate-end">{q.label}</Text>
               </Box>
               <Box flexGrow={1} flexShrink={1} marginRight={1}>
-                <Text color={MUTED} wrap="truncate-end">{line}</Text>
+                <Text color={MUTED} wrap="truncate-end">{q.blurb}</Text>
               </Box>
-              <Box width={8} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
-                <Button key={`toggle-${mod.name}`} plain label={isOn ? '● On' : '○ Off'} hover={{ bold: true }} onPress={() => toggle($, mod)}>
-                  <Text color={INK}>{isOn ? '● On' : '○ Off'}</Text>
+              <Box width={8} flexShrink={0} backgroundColor={GOLD} paddingX={1}>
+                <Button key={`quick-btn-${q.command}`} plain label={`▸ ${q.verb}`} hover={{ bold: true }} onPress={() => runQuick($, q)}>
+                  <Text color={BLACK}>{`▸ ${q.verb}`}</Text>
                 </Button>
               </Box>
             </Box>
-          )
-        })}
-
-        {section('Actions')}
-        {visibleQuick(commands).map(q => (
-          <Box key={`quick-${q.command}`} flexDirection="row" hover={{ backgroundColor: SLATE }}>
-            <Box width={18} flexShrink={0}>
-              <Text bold color={INK} wrap="truncate-end">{q.label}</Text>
-            </Box>
-            <Box flexGrow={1} flexShrink={1} marginRight={1}>
-              <Text color={MUTED} wrap="truncate-end">{q.blurb}</Text>
-            </Box>
-            <Box width={8} flexShrink={0} backgroundColor={GOLD} paddingX={1}>
-              <Button key={`quick-btn-${q.command}`} plain label={`▸ ${q.verb}`} hover={{ bold: true }} onPress={() => runQuick($, q)}>
-                <Text color={BLACK}>{`▸ ${q.verb}`}</Text>
-              </Button>
-            </Box>
-          </Box>
-        ))}
+          ))}
+        </Box>
       </Box>
     )
   })
