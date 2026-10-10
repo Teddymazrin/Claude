@@ -654,7 +654,7 @@ export const register: Register = on => {
             mod.name,
             <Text bold={isOn} color={isOn ? INK : MUTED} wrap="truncate-end">{titled(mod.name)}</Text>,
             line,
-            <Box width={7} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
+            <Box width={8} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
               <Button key={`toggle-${mod.name}`} plain label={isOn ? '● On' : '○ Off'} hover={{ bold: true }} onPress={() => toggle($, mod)}>
                 <Text color={INK}>{isOn ? '● On' : '○ Off'}</Text>
               </Button>
@@ -668,7 +668,7 @@ export const register: Register = on => {
             `quick-${q.command}`,
             <Text color={INK} wrap="truncate-end">{q.label}</Text>,
             q.blurb,
-            <Box width={7} flexShrink={0} backgroundColor={GOLD} paddingX={1}>
+            <Box width={8} flexShrink={0} backgroundColor={GOLD} paddingX={1}>
               <Button key={`quick-btn-${q.command}`} plain label={`▸ ${q.verb}`} hover={{ bold: true }} onPress={() => runQuick($, q)}>
                 <Text color={BLACK}>{`▸ ${q.verb}`}</Text>
               </Button>

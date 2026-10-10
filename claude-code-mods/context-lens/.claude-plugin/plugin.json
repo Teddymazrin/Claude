@@ -1,6 +1,6 @@
 {
   "name": "context-lens",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Context Lens. Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages, in a pane, with an exact count on demand",
   "author": {
     "name": "Teddymazrin"

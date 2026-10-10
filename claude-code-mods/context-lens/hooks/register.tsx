@@ -7,13 +7,22 @@ const PANE = 'context-lens'
 const TITLE = 'Context Lens'
 const TOP = 5
 const KEEP = 200
+// Control Panel's button that opens this pane, and how long after its press to open.
+const CONTROL_PANEL = 'control-panel'
+const OPEN_BUTTON = 'quick-btn-context-lens'
+const OPEN_DELAY_MS = 150
+
+// Set at a Control Panel press, cleared when that button's queued command arrives.
+let pressed = false
 
 // The same palette as Control Panel, so the two read as one set.
 const GOLD = '#d9a441'
-const FRAME = '#8a6a2f'
 const ORANGE = '#e06c3c'
 const GREEN = '#1f9d63'
 const SLATE = '#2a2f3a'
+const BLACK = '#0c0c0e'
+const INK = '#e8e6e3'
+const MUTED = '#7d8190'
 
 const THEME_KEYS = new Set(['text', 'inactive', 'subtle', 'suggestion', 'remember', 'success', 'error', 'warning', 'merged', 'claude', 'permission', 'planMode', 'autoAccept', 'promptBorder', 'bashBorder', 'ide'])
 const FALLBACK = ['#e06c3c', '#d9a441', '#a8729a', '#1f9d63', '#4f8fd6', '#c9675a', '#7aa874', '#b58bd1', '#5bb3b0', '#8a8f99']
@@ -112,16 +121,34 @@ async function openPane($: EngineInterface) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'context-lens', description: 'Show where your context is going' })
+    // Immediate: /context-lens typed mid-turn opens now instead of after the turn.
+    await $.command.register({ name: 'context-lens', description: 'Show where your context is going', immediate: true })
 
     return next(e)
   })
 
-  on('command.run', { command: 'context-lens' }, async $ => {
+  on('command.run', { command: 'context-lens' }, async ($, e) => {
+    // Control Panel's button already opened it at the press; this is that button's queued run arriving late.
+    if (pressed && e.origin.kind === 'plugin' && e.origin.name === CONTROL_PANEL) {
+      pressed = false
+      return { text: `${TITLE} opened.` }
+    }
     const opened = await openPane($)
 
     return { text: opened.isPlaced ? `${TITLE} opened.` : `${TITLE} is waiting: ${opened.reason}` }
   })
+
+  // Control Panel's Context Lens button runs /context-lens, which waits for the turn to end.
+  // Opening here, at the press, works while the model is busy too.
+  on('ui.press', { plugin: CONTROL_PANEL, element: OPEN_BUTTON }, async ($, e, next) => {
+    pressed = true
+    const result = next(e)
+    // After Control Panel has stepped its own pane aside, so this one comes to the front.
+    $.clock.after(OPEN_DELAY_MS, () => {
+      void openPane($).catch(() => {})
+    })
+    return result
+  }).catch(($, e, next) => next(e))
 
   // After each turn: a free local estimate, only while the pane is up.
   on('session.measure', async ($, e, next) => {
@@ -140,27 +167,21 @@ export const register: Register = on => {
     const columns = e.props.bodyColumns || (e.viewport?.columns ?? 80)
     const barWidth = Math.max(10, Math.min(60, columns - 4))
 
-    const section = (label: string) => (
-      <Box marginTop={1} paddingLeft={2}>
-        <Text dimColor>{spaced(label)}</Text>
-      </Box>
-    )
-
     const header = (
       <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-        <Box flexDirection="row">
-          <Text color={ORANGE}>◆  </Text>
-          <Text bold color={GOLD}>{spaced(TITLE)}</Text>
-        </Box>
-        <Text dimColor>{s ? s.model : ''}</Text>
+        <Text bold color={GOLD}>
+          <Text color={ORANGE}>◆ </Text>
+          {TITLE}
+        </Text>
+        <Text color={MUTED}>{s ? s.model : ''}</Text>
       </Box>
     )
 
     if (!s) {
       return (
-        <Box flexDirection="column" borderStyle="round" borderColor={FRAME} paddingX={1}>
+        <Box flexDirection="column" width={e.props.bodyColumns} minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined} backgroundColor={BLACK} paddingX={1}>
           {header}
-          <Text dimColor>{isBusy ? 'Measuring…' : 'No reading yet.'}</Text>
+          <Text color={MUTED}>{isBusy ? 'Measuring…' : 'No reading yet.'}</Text>
         </Box>
       )
     }
@@ -176,13 +197,13 @@ export const register: Register = on => {
       <Box key={`row-${r.name}`} flexDirection="row">
         <Text color={r.color}>■ </Text>
         <Box width={24} flexShrink={0}>
-          <Text dimColor={isDim} wrap="truncate-end">{r.name}</Text>
+          <Text color={isDim ? MUTED : INK} wrap="truncate-end">{r.name}</Text>
         </Box>
         <Box width={8} flexShrink={0} justifyContent="flex-end">
-          <Text dimColor={isDim}>{tokensText(r.tokens)}</Text>
+          <Text color={isDim ? MUTED : INK}>{tokensText(r.tokens)}</Text>
         </Box>
         <Box width={6} flexShrink={0} justifyContent="flex-end">
-          <Text dimColor>{percentText(r.tokens, s.max)}</Text>
+          <Text color={MUTED}>{percentText(r.tokens, s.max)}</Text>
         </Box>
       </Box>
     )
@@ -193,45 +214,47 @@ export const register: Register = on => {
       const isOpen = open.includes(label)
       const sum = list.reduce((n, item) => n + item.tokens, 0)
       return [
-        <Box key={`head-${label}`} marginTop={1} paddingLeft={2} flexDirection="row">
-          <Text dimColor>{spaced(label)}</Text>
-          <Text dimColor>{`   ${list.length} · ${tokensText(sum)}${note ? ` · ${note}` : ''}`}</Text>
+        <Box key={`head-${label}`} marginTop={1} flexDirection="row">
+          <Text color={MUTED}>{label}</Text>
+          <Text color={MUTED}>{`  ${list.length} · ${tokensText(sum)}${note ? ` · ${note}` : ''}`}</Text>
         </Box>,
         ...shown(list, isOpen).map(item => (
-          <Box key={`${label}-${item.label}-${item.note}`} flexDirection="row" paddingLeft={2}>
+          <Box key={`${label}-${item.label}-${item.note}`} flexDirection="row">
             <Box flexGrow={1} flexShrink={1}>
-              <Text wrap="truncate-end">{item.label}</Text>
+              <Text color={INK} wrap="truncate-end">{item.label}</Text>
             </Box>
             <Box width={16} flexShrink={0}>
-              <Text dimColor wrap="truncate-end">{` ${item.note}`}</Text>
+              <Text color={MUTED} wrap="truncate-end">{` ${item.note}`}</Text>
             </Box>
             <Box width={8} flexShrink={0} justifyContent="flex-end">
-              <Text>{tokensText(item.tokens)}</Text>
+              <Text color={INK}>{tokensText(item.tokens)}</Text>
             </Box>
           </Box>
         )),
         list.length > TOP ? (
-          <Box key={`more-${label}`} paddingLeft={2} hover={{ backgroundColor: SLATE }}>
+          <Box key={`more-${label}`} hover={{ backgroundColor: SLATE }}>
             <Button
               key={`toggle-${label}`}
               plain
               label={isOpen ? '▾ Show fewer' : `▸ Show all ${list.length}`}
               hover={{ bold: true }}
               onPress={() => update($, expanded, now => (now.includes(label) ? now.filter(one => one !== label) : [...now, label]))}
-            />
+            >
+              <Text color={MUTED}>{isOpen ? '▾ Show fewer' : `▸ Show all ${list.length}`}</Text>
+            </Button>
           </Box>
         ) : null,
       ]
     }
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={FRAME} paddingX={1}>
+      <Box flexDirection="column" width={e.props.bodyColumns} minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined} backgroundColor={BLACK} paddingX={1}>
         {header}
 
         <Box flexDirection="row">
           <Text bold color={pctColor}>{`${s.percent}%`}</Text>
-          <Text dimColor>{`  ${tokensText(s.total)} of ${tokensText(s.max)}`}</Text>
-          {s.compactAt !== null && <Text dimColor>{` · compacts at ${tokensText(s.compactAt)}`}</Text>}
+          <Text color={MUTED}>{`  ${tokensText(s.total)} of ${tokensText(s.max)}`}</Text>
+          {s.compactAt !== null && <Text color={MUTED}>{` · compacts at ${tokensText(s.compactAt)}`}</Text>}
         </Box>
         <Box flexDirection="row" marginBottom={1}>
           {bar.cells.map((c, i) => (
@@ -251,7 +274,7 @@ export const register: Register = on => {
         {items('Agents', s.agents)}
 
         <Box flexDirection="row" justifyContent="space-between" marginTop={1}>
-          <Text dimColor>
+          <Text color={MUTED}>
             {isBusy ? 'Measuring…' : s.detail === 'full' ? 'Counted exactly' : 'Estimated'}
           </Text>
           <Box key="count-exactly-box" backgroundColor={SLATE} paddingX={1}>
@@ -262,7 +285,9 @@ export const register: Register = on => {
               hotkey="c"
               hover={{ bold: true }}
               onPress={() => measure($, 'full').catch(() => {})}
-            />
+            >
+              <Text color={INK}>Count exactly</Text>
+            </Button>
           </Box>
         </Box>
       </Box>
