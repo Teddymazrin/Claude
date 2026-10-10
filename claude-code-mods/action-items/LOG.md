@@ -1,5 +1,16 @@
 # Action Items log
 
+## 6.2.0 (2026-10-10)
+
+**Asked for:** Copy on commands can be janky; and the box can't be cleared or closed while Claude is working, only once it stops.
+
+**Changed:**
+- `/action-items clear`, `/action-items clear all` and `/action-items hide` run straight away, even mid-turn (the command is marked immediate). `/action-items` alone still brings the box back
+- A folded command row shows its first line that actually runs, not a `# comment` or blank line
+- Copy's message is a short "Command copied" instead of repeating the whole command
+
+**Not fixed:** the box's own buttons still don't respond mid-turn. Nothing in the mod blocks them, so it looks like Claude Code holds the clicks until the turn ends. Not yet confirmed live
+
 ## 6.1.0 (2026-10-10)
 
 **Asked for:** the box carried asks from one conversation into another: a new conversation asked for things that belonged to the other one.

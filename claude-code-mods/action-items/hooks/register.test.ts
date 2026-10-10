@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
+import { addSet, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -129,4 +129,10 @@ test('each conversation keeps its own box; the oldest past 20 and the old shared
   const keys = ['sets', ...Array.from({ length: 22 }, (_, i) => `sets:s${i}`)]
   expect(staleKeys(keys)).toEqual(['sets', 'sets:s0', 'sets:s1'])
   expect(staleKeys(['sets:a', 'sets:b'])).toEqual([])
+})
+
+test('a folded command shows its first line that runs, not a comment', () => {
+  expect(commandPreview('# All tests\npwsh -File t.ps1\n\n# More\npwsh x')).toBe('pwsh -File t.ps1')
+  expect(commandPreview('az login')).toBe('az login')
+  expect(commandPreview('# only a comment')).toBe('# only a comment')
 })

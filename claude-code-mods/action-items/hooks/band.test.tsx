@@ -284,3 +284,19 @@ test('Clear drops the set shown so the box moves on, and Clear all empties it', 
   }
   expect(await $.command.run({ command: 'action-items' } as never)).toEqual({ text: 'Nothing open: Claude needs nothing from you right now.' })
 })
+
+test('/action-items clear, clear all and hide work from the prompt, mid-turn too', async ($, on) => {
+  let now = 1_000
+  on('clock.now', () => ({ value: now }))
+  const ask = async (title: string, at: number) => {
+    now = at
+    await $.tool.call({ tool: 'mcp__action-items__action_items', title, actions: [{ text: `Do ${title}`, why: 'Test' }] } as never)
+  }
+  await ask('First', 1_000)
+  await ask('Second', 2_000)
+  expect(await $.command.run({ command: 'action-items', args: 'clear' } as never)).toEqual({ text: 'Cleared Second.' })
+  expect(await $.command.run({ command: 'action-items', args: 'hide' } as never)).toEqual({ text: 'Box hidden. /action-items brings it back.' })
+  expect(await $.command.run({ command: 'action-items', args: '' } as never)).toEqual({ text: 'Showing First (1 to do) above the prompt.' })
+  expect(await $.command.run({ command: 'action-items', args: 'clear all' } as never)).toEqual({ text: 'Box emptied.' })
+  expect(await $.command.run({ command: 'action-items', args: 'clear' } as never)).toEqual({ text: 'Nothing to clear.' })
+})

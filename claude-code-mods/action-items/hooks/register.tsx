@@ -241,6 +241,29 @@ async function show($: EngineInterface, set: StepSet) {
 /** The set to show next: the newest with a question waiting, else the newest with something to do. */
 export const nextSet = (list: readonly StepSet[]) => list.find(s => pendingDecisions(s).length > 0) ?? list.find(isOpen)
 
+/** The set the box shows: the one asked for while it is still open, else the next one waiting. */
+export const shownSet = (list: readonly StepSet[], id: string | null) => {
+  const asked = list.find(s => s.id === id)
+  return asked && isOpen(asked) ? asked : nextSet(list)
+}
+
+/** The line a folded action shows of its command: the first that runs, past blank lines and comments. */
+export const commandPreview = (command: string) =>
+  command.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#') && !l.startsWith('//') && !/^rem\b/i.test(l)) ?? command.split('\n')[0]!
+
+// Clear drops the set shown for good, so the box moves on to the next one waiting or closes.
+async function clearShown($: EngineInterface, id: string) {
+  const left = await save($, l => clearSet(l, id))
+  await update($, tab, () => null)
+  await update($, band, () => nextSet(left)?.id ?? null)
+}
+
+async function clearAll($: EngineInterface) {
+  await save($, () => [])
+  await update($, tab, () => null)
+  await update($, band, () => null)
+}
+
 /** The tab the box opens on: Decide while a question waits, Do after. */
 export const autoTab = (set: StepSet): 'decide' | 'do' => (pendingDecisions(set).length > 0 || actions(set).length === 0 ? 'decide' : 'do')
 
@@ -376,14 +399,14 @@ function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, ind
         {/* Folded, its command rides on the same row, cut to fit, with Copy after it. */}
         {!show.command && a.command && !a.isDone && (
           <Box flexShrink={1} marginLeft={2} backgroundColor={C.code} paddingX={1}>
-            <Text color={C.do} wrap="truncate-end">{a.command.split('\n')[0]}</Text>
+            <Text color={C.do} wrap="truncate-end">{commandPreview(a.command)}</Text>
           </Box>
         )}
         {!show.command && a.command && !a.isDone && (
           <Box flexShrink={0} marginLeft={1}>
             {chip($, e, `copy-${key}`, 'Copy', async press => {
               const copied = await $.ui.copy({ text: a.command!, surface: press.surface })
-              $.ui.toast(copied.isCopied ? `Copied: ${a.command}` : 'Could not copy the command')
+              $.ui.toast(copied.isCopied ? 'Command copied' : 'Could not copy the command')
             })}
           </Box>
         )}
@@ -464,7 +487,8 @@ export const register: Register = on => {
         required: ['title'],
       },
     })
-    await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you' })
+    // Immediate, so `clear` and `hide` work while Claude is still working, when the box's buttons wait for the turn to end.
+    await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you', argumentHint: '[clear | clear all | hide]', immediate: true })
     // Bring back this conversation's box when it is resumed; sets from before decisions existed are dropped.
     if ((await read($, sets)).length === 0) {
       const stored = (await $.store.get(storeKey(await $.session.id()))) as StepSet[] | undefined
@@ -546,22 +570,10 @@ export const register: Register = on => {
     if (id === null || e.props.hasSurvey) return below
     // The set asked for; once it is all done, the newest set still waiting on the person.
     const list = await read($, sets)
-    const asked = list.find(s => s.id === id)
-    const set = asked && isOpen(asked) ? asked : nextSet(list)
+    const set = shownSet(list, id)
     if (!set) return below
     const { Box, Text, Button } = $.ui.resolve(e)
     const openCount = list.filter(isOpen).length
-    const clearShown = async () => {
-      const left = await save($, l => clearSet(l, set.id))
-      await update($, tab, () => null)
-      // On to the next set still waiting, or the box closes.
-      await update($, band, () => nextSet(left)?.id ?? null)
-    }
-    const clearAll = async () => {
-      await save($, () => [])
-      await update($, tab, () => null)
-      await update($, band, () => null)
-    }
     const decide = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Decision; i: number } => x.it.kind === 'decide')
     const doing = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Action; i: number } => x.it.kind === 'do')
     // One section at a time: the tab the person picked, else Decide while a question waits.
@@ -655,11 +667,11 @@ export const register: Register = on => {
               {/* Clear drops this set for good, so the box moves on instead of coming back to it. */}
               {openCount > 1 && (
                 <Box key="clear-all-box" marginRight={2}>
-                  <Button key="clear-all" plain dimColor label={`Clear all ${openCount}`} hover={{ bold: true }} onPress={() => clearAll()} />
+                  <Button key="clear-all" plain dimColor label={`Clear all ${openCount}`} hover={{ bold: true }} onPress={() => clearAll($)} />
                 </Box>
               )}
               <Box key="clear-box" marginRight={2}>
-                <Button key="clear" plain dimColor label="Clear" hover={{ bold: true }} onPress={() => clearShown()} />
+                <Button key="clear" plain dimColor label="Clear" hover={{ bold: true }} onPress={() => clearShown($, set.id)} />
               </Box>
               <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
             </Box>
@@ -675,7 +687,22 @@ export const register: Register = on => {
     )
   })
 
-  on('command.run', { command: COMMAND }, async $ => {
+  on('command.run', { command: COMMAND }, async ($, e) => {
+    const arg = (e.args ?? '').trim().toLowerCase()
+    if (arg === 'hide') {
+      await update($, band, () => null)
+      return { text: 'Box hidden. /action-items brings it back.' }
+    }
+    if (arg === 'clear all') {
+      await clearAll($)
+      return { text: 'Box emptied.' }
+    }
+    if (arg === 'clear') {
+      const shown = shownSet(await read($, sets), await read($, band))
+      if (!shown) return { text: 'Nothing to clear.' }
+      await clearShown($, shown.id)
+      return { text: `Cleared ${shown.title}.` }
+    }
     const open = nextSet(await read($, sets))
     if (!open) return { text: 'Nothing open: Claude needs nothing from you right now.' }
     await update($, band, () => open.id)
