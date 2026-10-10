@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, isClosed, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel } from './register'
+import { PEEK_MAX, advanceChecklist, isClosed, isMuted, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -223,4 +223,33 @@ test('the reminder goes along only until a system prompt carries the instruction
   expect(withReminder(['x'], false)).toEqual(['x', REMINDER])
   expect(withReminder(['x'], true)).toEqual(['x'])
   expect(withReminder([], true)).toEqual([])
+})
+
+test('advance moves the list on one step at a time, without resending it', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  const list = { goal: 'G', steps: [{ text: 'A', status: 'active' as const }, { text: 'B', status: 'todo' as const }, { text: 'C', status: 'todo' as const }] }
+  expect(advanceChecklist(list).steps.map(s => s.status)).toEqual(['done', 'active', 'todo'])
+  expect(advanceChecklist(advanceChecklist(advanceChecklist(list))).steps.map(s => s.status)).toEqual(['done', 'done', 'done'])
+  // Nothing to advance before a plan.
+  expect((await $.tool.call({ tool: 'mcp__bare-view__checklist', advance: true } as never)).isError).toBe(true)
+  await $.tool.call({ tool: 'mcp__bare-view__checklist', ...list } as never)
+  const ran = await $.tool.call({ tool: 'mcp__bare-view__checklist', advance: true } as never)
+  expect(ran.isError).toBeFalsy()
+  expect(ran.result).toBe('Checklist updated.')
+  await $.tool.call({ tool: 'mcp__bare-view__checklist', advance: true } as never)
+  // The call that finishes the list hands back the answer's shape.
+  const last = await $.tool.call({ tool: 'mcp__bare-view__checklist', advance: true } as never)
+  expect(last.result).toContain('Checklist finished')
+  expect(last.result).toContain('**Summary**')
+})
+
+test('a message keeps the verdict of its first drawing, so earlier answers stay when redrawn', () => {
+  const verdicts = new Map<string, boolean>()
+  // The last answer, drawn once the list was done: shown.
+  expect(isMuted(verdicts, 'answer-1', false)).toBe(false)
+  // Working text written during the next checklist: hidden.
+  expect(isMuted(verdicts, 'working-2', true)).toBe(true)
+  // A scroll or resize redraws the old answer while that checklist is open: still shown.
+  expect(isMuted(verdicts, 'answer-1', true)).toBe(false)
+  expect(isMuted(verdicts, 'working-2', false)).toBe(true)
 })

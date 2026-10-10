@@ -1,5 +1,40 @@
 # Bare View log
 
+## 1.13.1 (2026-10-10)
+
+**Found in use:** scrolling back, only your prompts and the latest answer showed. Earlier answers were gone, and asked for a way to expand them.
+
+**Found:** each answer was hidden or shown afresh every time it was drawn, by whether a checklist was open at that moment. The transcript draws messages again on a scroll or a resize, so an earlier answer redrawn while a new checklist was open got hidden, and stayed hidden.
+
+**Changed:** a message is hidden or shown once, the first time it is drawn: hidden only if it was written while a turn ran with steps still open. Redrawing never changes that, so every final answer stays in the transcript. Nothing to expand: they simply show. `/checklist` still shows everything, working text included.
+
+**Known limit:** answers already hidden in a session that ran an older version come back after a `/reload-plugins`.
+
+## 1.13.0 (2026-10-10)
+
+**Asked for:** final answers were still sometimes very long and unfocused, mostly after turns that did a lot of work. Every answer should be a short, focused summary, anything else worth knowing, the decisions to make, and the actions to take (how-to steps and commands go there too).
+
+**Found:** the short-answer rule only lived in the system prompt. After a long turn with many tool calls it was far behind, and the answer drifted from it.
+
+**Changed:**
+- The final-answer rule is now a fixed shape: **Summary** (1-3 sentences, no recap of steps, files or commands), **Why** (1-2 sentences, only if not obvious: the cause of a problem, or the reason for the approach), **Worth knowing** (up to 3 bullets, only if any; includes whether an errored tool call mattered), then **decisions** and **actions** in the Action Items box. Without that tool they go under those two headings, commands in code blocks. Empty parts are left out; prose stays under about 80 words unless you asked for an explanation
+- The call that finishes the checklist now returns that shape (`Checklist finished. Write the final answer now. …`), so it is the last thing Claude reads before answering, however long the turn was
+- The mid-session reminder names the shape too
+- A plain question with no task skips the checklist and answers directly: the answer first, a short why if it helps, up to 3 bullets, no labels, about 80 words
+- Added after seeing examples: the **Why** part, asked for so the reason behind a result is there when it isn't obvious
+
+## 1.12.0 (2026-10-10)
+
+**Asked for:** the progress list was inconsistent. Sometimes it ticked off steps one by one; other times it sat on step 1 and then jumped straight to all done.
+
+**Found:** the instructions told Claude to call the checklist again "only when the plan changes; do not send an update after every step". So Claude only ticked steps off when it ignored that rule. Each update also meant resending the whole list, which is why it was discouraged.
+
+**Changed:**
+- New short call, `{"advance": true}`: marks the active step done and starts the next one, without resending the list
+- The instructions now ask Claude to advance after every step, the last one included, and never jump several steps at once at the end
+- The whole list goes again only when the plan changes or a step failed. `goal` and `steps` are no longer required in the tool's schema, so the short call validates
+- Advancing before there is a list returns an error asking for the goal and steps first
+
 ## 1.11.0 (2026-10-09)
 
 **Asked for:** make Claude's final answer shorter, more concise and focused.

@@ -29,17 +29,25 @@ const VIOLET_FROM = '#3b2f6b'
 const VIOLET_TO = '#8b8cf6'
 const TRACK = '#2a2433'
 
+/** The shape of every final answer; in the instructions, and again in the result of the call that finishes the list. */
+export const FINAL_SHAPE = `Use this shape and nothing else:
+  1. **Summary**: 1-3 sentences on the result: what changed, or the answer. No recap of the steps, no list of files or commands you ran, no restating the request.
+  2. **Why**: only if it is not obvious, 1-2 sentences: the cause of a problem you found or fixed, or the reason you chose this approach over another.
+  3. **Worth knowing**: only if there is any, up to 3 short bullets: a failure, a caveat, a surprise, or something that changes how the user reads the result. If any tool call errored, one bullet says whether it affected the result.
+  4. **Decisions** (questions for the user) and **actions** (things the user does, including how-to steps and the exact commands): put them in the Action Items box when that tool is available, and only say they are there. Without it, list them under those two headings, commands in code blocks.
+  Leave out any part that is empty. Use no other headings, no closing offers. Keep the prose under about 80 words; longer only when the user asked for an explanation, or when the content itself (code, a table, a list they asked for) is what they wanted.`
+
 const INSTRUCTIONS = `# Bare View progress checklist
 The user does not see your tool calls or the text you write while a checklist is in progress; they see a checklist drawn from the \`${TOOL_ID}\` tool.
 - At the start of every request that needs any work (reading, searching, editing, running), call \`${TOOL_ID}\` first (load it with ToolSearch "select:${TOOL_ID}" if it is not loaded) with a short \`goal\` and 2-7 concrete \`steps\`, the first one \`active\`, the rest \`todo\`.
-- Call it again only when the plan changes; do not send an update after every step.
+- Each time you finish a step, before you start work on the next, call it with just \`{"advance": true}\`: it marks the active step done and the next one active, so the user sees you move along. Do this for every step, including the last one before your final answer; never jump several steps at once at the end.
+- Send the whole list again only when the plan changes or a step failed.
 - Mark a step \`failed\` only when its result did not happen and you are not fixing it this turn (a push rejected, tests still failing, a file not written), and give it a \`reason\`: what went wrong, in a few plain words the user understands ("Branch not found", "GitHub rejected the push: behind main"). A tool call that errored but was retried, or did not matter, does not make a step failed.
-- Before your final answer, call it with every step \`done\` (or \`failed\`). Only text after that call is shown.
-- If any tool call errored, the final answer says in one line whether it affected the result.
-- Final answer: short and focused. Lead with the result in 1-2 sentences, then add only what the user must act on or what changes how they read the result (a failure, a caveat, a surprise). No recap of the steps, no restating the request, no closing offers, no headings for a short answer. Keep it to about 5 lines, unless the user asked for an explanation or the content itself (code, a table, a list they asked for) is what they wanted.
-- Skip it for a pure question you can answer without tools.`
+- Before your final answer every step must be \`done\` (or \`failed\`). Only text after the call that finishes the list is shown.
+- Final answer, every time, however much work the turn took. ${FINAL_SHAPE}
+- Skip the checklist for a pure question you can answer without tools. Then answer directly, without the Summary/Why labels: the answer first, a short why if it helps, up to 3 bullets, about 80 words, unless the user asked for depth.`
 
-export const REMINDER = `[Bare View] Use the checklist (ToolSearch "select:${TOOL_ID}" if not loaded); final answer = short outcome.`
+export const REMINDER = `[Bare View] Use the checklist (ToolSearch "select:${TOOL_ID}" if not loaded); final answer = Summary, Why, Worth knowing, then decisions and actions in the Action Items box.`
 
 /** A prompt's context: the reminder only while no system prompt carries the instructions (a session the mod joined mid-way). */
 export const withReminder = (context: readonly string[], isComposed: boolean) => (isComposed ? [...context] : [...context, REMINDER])
@@ -80,6 +88,17 @@ export const parseChecklist = (input: Record<string, unknown>): Checklist | stri
     steps.push({ text: s.text.trim(), status, ...(reason ? { reason } : {}) })
   }
   return { goal, steps }
+}
+
+/** Moves a checklist on one step: the open step is done and the next one waiting starts. */
+export const advanceChecklist = (list: Checklist): Checklist => {
+  const steps = list.steps.map(s => ({ ...s }))
+  let at = steps.findIndex(s => s.status === 'active')
+  if (at === -1) at = steps.findIndex(s => s.status === 'todo')
+  if (at !== -1) steps[at]!.status = 'done'
+  const following = steps.findIndex((s, i) => i > at && s.status === 'todo')
+  if (following !== -1) steps[following]!.status = 'active'
+  return { ...list, steps }
 }
 
 /** The MCP server a tool name belongs to (`mcp__<server>__<tool>`), shortened; undefined for a built-in tool. */
@@ -299,9 +318,20 @@ export const foldedLine = (list: Checklist, timer: string) => {
 
 const SPINNER = ['◐', '◓', '◑', '◒']
 
-// Messages (by id) drawn while a checklist was open stay hidden after it closes.
+// Whether each message (by id) is hidden, settled the first time it is drawn:
+// hidden when it was written while a turn ran with steps still open. The transcript
+// draws messages again on a scroll or a resize, so a later drawing must not re-decide,
+// or an earlier answer redrawn during a new checklist would vanish for good.
 // A module value: a render hook may not write state, and a reload only shows them again.
-const muted = new Set<string>()
+const muted = new Map<string, boolean>()
+
+/** Whether a message is hidden: the verdict from its first drawing, else decided now. */
+export const isMuted = (verdicts: Map<string, boolean>, id: string, isWorkingText: boolean) => {
+  const known = verdicts.get(id)
+  if (known !== undefined) return known
+  verdicts.set(id, isWorkingText)
+  return isWorkingText
+}
 
 // Ids for calls that arrive without a tool_use_id.
 let callNo = 0
@@ -342,10 +372,11 @@ export const register: Register = on => {
     await $.tool.register({
       name: TOOL,
       description:
-        'Report your plan and progress to the user as a checklist. Call it at the start of a task, when the plan changes, and once at the end. Send the whole list every time.',
+        'Report your plan and progress to the user as a checklist. Start a task with the whole list (goal and steps). Each time you finish a step, call it with just {"advance": true} to mark it done and start the next. Send the whole list again only when the plan changes or a step failed.',
       inputSchema: {
         type: 'object',
         properties: {
+          advance: { type: 'boolean', description: 'true, alone: the active step is done and the next one starts. Use it each time you finish a step.' },
           goal: { type: 'string', description: 'What you are working on, one short line.' },
           steps: {
             type: 'array',
@@ -364,7 +395,6 @@ export const register: Register = on => {
             },
           },
         },
-        required: ['goal', 'steps'],
       },
     })
     // The checklist shows in the band alone; clear a footer line an older version pinned.
@@ -480,18 +510,25 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: TOOL_ID }, async ($, e) => {
-    const parsed = parseChecklist(e as unknown as Record<string, unknown>)
+    const input = e as unknown as Record<string, unknown>
+    const before = await read($, checklist)
+    // {"advance": true} alone moves the list on a step, without resending it.
+    const isAdvance = input.advance === true && input.steps === undefined
+    if (isAdvance && !before?.steps.length) {
+      return { result: 'Checklist not updated: there is no list to advance yet; send the goal and steps first.', isError: true }
+    }
+    const parsed = isAdvance ? advanceChecklist({ goal: before!.goal, steps: before!.steps }) : parseChecklist(input)
     if (typeof parsed === 'string') {
       return { result: `Checklist not updated: ${parsed}`, isError: true }
     }
     const now = await $.clock.now()
-    const before = await read($, checklist)
     const startedAt = before?.startedAt ?? now
     const next: Checklist = { ...parsed, startedAt, ...(isInProgress(parsed) ? {} : { finishedAt: now }) }
     // Keep the tally and the calls so far; a concurrent count may land meanwhile, so read them inside the update.
     await update($, checklist, cur => ({ ...next, steps: carryCalls(cur, next.steps), ...(cur?.tally ? { tally: cur.tally } : {}) }))
     if (isInProgress(next)) void tick($).catch(() => {})
-    return { result: 'Checklist updated.' }
+    // The call that finishes the list comes right before the answer: repeat its shape there, where it is hardest to drift from.
+    return { result: isInProgress(next) ? 'Checklist updated.' : `Checklist finished. Write the final answer now. ${FINAL_SHAPE}` }
   })
 
   // Tally every other tool call (built-in, MCP, subagents') since the prompt,
@@ -535,11 +572,11 @@ export const register: Register = on => {
   })
 
   // Mute what the model writes while steps are open; its final answer, written
-  // after every step is done, still shows.
+  // after every step is done, still shows, and keeps showing when drawn again.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     if (await read($, showTools)) return next(e)
-    if (isInProgress(await read($, checklist))) muted.add(e.requestId)
-    if (!muted.has(e.requestId)) return next(e)
+    const isWorkingText = isInProgress(await read($, checklist)) && (await read($, activity)) !== null
+    if (!isMuted(muted, e.requestId, isWorkingText)) return next(e)
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
