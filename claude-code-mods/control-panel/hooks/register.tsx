@@ -10,10 +10,12 @@ const COMMAND = 'control-panel'
 const RELOAD = 'reload-plugins'
 // Quiet time after the last switch before the one reload runs.
 export const RELOAD_DELAY_MS = 1500
+// The dock width the pane asks for, and the width from which rows show their blurbs.
+const PANE_COLUMNS = 46
+const WIDE_COLUMNS = 64
 
-// Palette: warm gold frame, orange for the model, mauve for effort, green for on.
+// Palette: warm gold title, orange for the model, mauve for effort, green for on.
 const GOLD = '#d9a441'
-const FRAME = '#8a6a2f'
 const ORANGE = '#e06c3c'
 const MAUVE = '#a8729a'
 const GREEN = '#1f9d63'
@@ -429,7 +431,7 @@ async function pick($: EngineInterface, patch: Partial<Choice>) {
 
 async function openPane($: EngineInterface) {
   await rescan($)
-  await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
+  await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true, columns: PANE_COLUMNS })
 }
 
 export const register: Register = on => {
@@ -595,80 +597,84 @@ export const register: Register = on => {
       </Box>
     )
 
-    const pickerRow = (label: string, children: RenderChildren) => (
-      <Box flexDirection="row">
-        <Box width={8} flexShrink={0}>
-          <Text color={MUTED}>{label}</Text>
-        </Box>
+    // Narrow by default: the one-line blurbs only show once the pane has room for them.
+    const isWide = e.props.bodyColumns >= WIDE_COLUMNS
+
+    const picker = (label: string, children: RenderChildren) => (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={MUTED}>{label}</Text>
         <Box flexDirection="row" flexWrap="wrap">{children}</Box>
       </Box>
     )
 
     const section = (label: string) => (
-      <Box marginTop={1} marginBottom={1} paddingLeft={2}>
-        <Text color={MUTED}>{spaced(label)}</Text>
+      <Box marginTop={1}>
+        <Text color={MUTED}>{label}</Text>
+      </Box>
+    )
+
+    // A settings or actions row: the name, the blurb when there's room, the button at the right edge.
+    const row = (key: string, name: RenderChildren, blurb: string, button: RenderChildren) => (
+      <Box key={key} flexDirection="row" hover={{ backgroundColor: SLATE }}>
+        <Box flexGrow={1} flexShrink={1} flexDirection="row">
+          <Box width={isWide ? 18 : undefined} flexShrink={0}>
+            {name}
+          </Box>
+          {isWide && <Text color={MUTED} wrap="truncate-end">{blurb}</Text>}
+        </Box>
+        {button}
       </Box>
     )
 
     return (
       // Black floor to ceiling: the body only grows to fit its tree, so the box asks for every row the dock has.
-      <Box flexDirection="column" width={e.props.bodyColumns} minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined} backgroundColor={BLACK}>
-        <Box flexDirection="column" borderStyle="round" borderColor={FRAME} backgroundColor={BLACK} paddingX={1}>
-          <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-            <Box flexDirection="row">
-              <Text color={ORANGE}>◆  </Text>
-              <Text bold color={GOLD}>{spaced(TITLE)}</Text>
-            </Box>
-            <Text color={MUTED}>{currentText(c, s)}</Text>
-          </Box>
-
-          {pickerRow(
-            'MODEL',
-            MODELS.map(m => option(`model-${m.hotkey}`, m.label, model === m.id, ORANGE, m.hotkey, () => pick($, { model: m.id }))),
-          )}
-          {pickerRow(
-            'EFFORT',
-            EFFORTS.map(f => option(`effort-${f.hotkey}`, f.label, effort === f.id, MAUVE, f.hotkey, () => pick($, { effort: f.id }))),
-          )}
-
-          {section('Settings')}
-          {settingRows(list).length === 0 && <Text color={MUTED}>  Bare View and Guard Rails are not installed.</Text>}
-          {settingRows(list).map(({ mod, line }) => {
-            const isOn = !off.includes(mod.name)
-            return (
-              <Box key={mod.name} flexDirection="row" hover={{ backgroundColor: SLATE }}>
-                <Box width={18} flexShrink={0}>
-                  <Text bold={isOn} color={isOn ? INK : MUTED} wrap="truncate-end">{titled(mod.name)}</Text>
-                </Box>
-                <Box flexGrow={1} flexShrink={1} marginRight={1}>
-                  <Text color={MUTED} wrap="truncate-end">{line}</Text>
-                </Box>
-                <Box width={8} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
-                  <Button key={`toggle-${mod.name}`} plain label={isOn ? '● On' : '○ Off'} hover={{ bold: true }} onPress={() => toggle($, mod)}>
-                    <Text color={INK}>{isOn ? '● On' : '○ Off'}</Text>
-                  </Button>
-                </Box>
-              </Box>
-            )
-          })}
-
-          {section('Actions')}
-          {visibleQuick(commands).map(q => (
-            <Box key={`quick-${q.command}`} flexDirection="row" hover={{ backgroundColor: SLATE }}>
-              <Box width={18} flexShrink={0}>
-                <Text bold color={INK} wrap="truncate-end">{q.label}</Text>
-              </Box>
-              <Box flexGrow={1} flexShrink={1} marginRight={1}>
-                <Text color={MUTED} wrap="truncate-end">{q.blurb}</Text>
-              </Box>
-              <Box width={8} flexShrink={0} backgroundColor={GOLD} paddingX={1}>
-                <Button key={`quick-btn-${q.command}`} plain label={`▸ ${q.verb}`} hover={{ bold: true }} onPress={() => runQuick($, q)}>
-                  <Text color={BLACK}>{`▸ ${q.verb}`}</Text>
-                </Button>
-              </Box>
-            </Box>
-          ))}
+      <Box flexDirection="column" width={e.props.bodyColumns} minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined} backgroundColor={BLACK} paddingX={1}>
+        <Box flexDirection="row" justifyContent="space-between">
+          <Text bold color={GOLD}>
+            <Text color={ORANGE}>◆ </Text>
+            {TITLE}
+          </Text>
+          <Text color={MUTED}>{currentText(c, s)}</Text>
         </Box>
+
+        {picker(
+          'Model',
+          MODELS.map(m => option(`model-${m.hotkey}`, m.label, model === m.id, ORANGE, m.hotkey, () => pick($, { model: m.id }))),
+        )}
+        {picker(
+          'Effort',
+          EFFORTS.map(f => option(`effort-${f.hotkey}`, f.label, effort === f.id, MAUVE, f.hotkey, () => pick($, { effort: f.id }))),
+        )}
+
+        {section('Settings')}
+        {settingRows(list).length === 0 && <Text color={MUTED}>Bare View and Guard Rails are not installed.</Text>}
+        {settingRows(list).map(({ mod, line }) => {
+          const isOn = !off.includes(mod.name)
+          return row(
+            mod.name,
+            <Text bold={isOn} color={isOn ? INK : MUTED} wrap="truncate-end">{titled(mod.name)}</Text>,
+            line,
+            <Box width={7} flexShrink={0} backgroundColor={isOn ? GREEN : SLATE} paddingX={1}>
+              <Button key={`toggle-${mod.name}`} plain label={isOn ? '● On' : '○ Off'} hover={{ bold: true }} onPress={() => toggle($, mod)}>
+                <Text color={INK}>{isOn ? '● On' : '○ Off'}</Text>
+              </Button>
+            </Box>,
+          )
+        })}
+
+        {section('Actions')}
+        {visibleQuick(commands).map(q =>
+          row(
+            `quick-${q.command}`,
+            <Text color={INK} wrap="truncate-end">{q.label}</Text>,
+            q.blurb,
+            <Box width={7} flexShrink={0} backgroundColor={GOLD} paddingX={1}>
+              <Button key={`quick-btn-${q.command}`} plain label={`▸ ${q.verb}`} hover={{ bold: true }} onPress={() => runQuick($, q)}>
+                <Text color={BLACK}>{`▸ ${q.verb}`}</Text>
+              </Button>
+            </Box>,
+          ),
+        )}
       </Box>
     )
   })
