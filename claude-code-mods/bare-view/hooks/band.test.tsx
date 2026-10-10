@@ -211,3 +211,29 @@ test('only a step Claude marks failed gets the pink ✗, folded and opened out',
     await ui.unmount()
   }
 })
+
+test('in a short band only the steps around the working one show, the rest counted', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('tool.call', () => ({ result: 'ok' }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  const steps = Array.from({ length: 10 }, (_, i) => ({ text: `Step number ${i + 1}`, status: i < 5 ? 'done' : i === 5 ? 'active' : 'todo' }))
+  await $.tool.call({ tool: 'mcp__bare-view__checklist', goal: 'Long plan', steps } as never)
+  // 12 rows, 3 kept for Action Items, 4 for the frame, goal and bar: 5 for steps and the counts.
+  const SHORT = { ...BAND, props: { ...BAND.props, maxRows: 12 } }
+  const ui = await $.ui.mount({ plugin: 'bare-view', surface: 'terminal', ...SHORT } as never)
+  expect(await ui.find({ type: 'Text', text: /Step number 6/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Step number 7/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Step number 1\b/ })).toBeFalsy()
+  expect((await ui.find({ key: 'steps-before' }))?.text).toBe('✓ … 4 done')
+  expect(await ui.find({ type: 'Text', text: /Step number 5/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /○ 3 more/ })).toBeTruthy()
+  await ui.unmount()
+  // With room for all of them, all ten show and nothing is counted.
+  const tall = await $.ui.mount({ plugin: 'bare-view', surface: 'terminal', ...BAND, props: { ...BAND.props, maxRows: 40 } } as never)
+  expect(await tall.find({ type: 'Text', text: /Step number 1\b/ })).toBeTruthy()
+  expect(await tall.find({ type: 'Text', text: /more$/ })).toBeFalsy()
+  await tall.unmount()
+})

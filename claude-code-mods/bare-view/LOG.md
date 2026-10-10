@@ -1,5 +1,11 @@
 # Bare View log
 
+## 1.14.0 (2026-10-10)
+
+**Asked for:** in a short terminal the checklist could still be cut off, even with Action Items folded to one line while Claude works.
+
+**Changed:** when the steps don't all fit the rows above the prompt, only the steps around the working one show (the next one first, then the one before), with "✓ … N done" above them and "○ N more" below. A step you opened to peek at its calls stays in view. While Claude works, three rows stay free for Action Items' folded line. With room for everything, nothing changes.
+
 ## 1.13.2 (2026-10-10)
 
 **Found in use:** after a finished answer, the checklist's last step could stay on "Working" when Claude forgot the final advance.

@@ -247,6 +247,27 @@ export const peekLines = (calls: readonly Call[] | undefined) => {
   return { shown, hidden: all.length - shown.length }
 }
 
+/**
+ * The steps shown when they do not all fit `room` rows: a run [start, end) around `focus`,
+ * one row before it for "… N done" and one after it for "N more" when steps are left out.
+ * `rows[i]` is how many rows step i takes. The focus step always shows.
+ */
+export const stepWindow = (rows: readonly number[], focus: number, room: number) => {
+  const n = rows.length
+  if (rows.reduce((a, b) => a + b, 0) <= room) return { start: 0, end: n }
+  let start = Math.min(Math.max(0, focus), n - 1)
+  let end = start + 1
+  let used = rows[start]!
+  const fits = (s: number, e: number, u: number) => u + (s > 0 ? 1 : 0) + (e < n ? 1 : 0) <= room
+  // Grow one step at a time, the next step first, then the one before.
+  for (let grew = true; grew; ) {
+    grew = false
+    if (end < n && fits(start, end + 1, used + rows[end]!)) used += rows[end++]!, (grew = true)
+    if (start > 0 && fits(start - 1, end, used + rows[start - 1]!)) used += rows[--start]!, (grew = true)
+  }
+  return { start, end }
+}
+
 const firstLine = (text: string, max = 80) => {
   const line = text.trim().split('\n')[0] ?? ''
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
@@ -695,6 +716,22 @@ export const register: Register = on => {
       )
     }
 
+    // Too many steps for the band's rows: only those around the working one show, the rest in
+    // "… N done" and "N more". While Claude works, three rows stay free for Action Items' folded line.
+    const fixedRows =
+      4 + (activityRow ? 1 : 0) + (list.tally && list.tally.total > 0 ? 1 + groups.filter(g => opened.includes(g.key)).reduce((a, g) => a + g.tools.length, 0) : 0)
+    const stepRows = list.steps.map((s, i) => {
+      const p = peekLines(peeked === i ? s.calls : [])
+      const peekRows = (p.hidden > 0 ? 1 : 0) + p.shown.reduce((a, c) => a + (c.preview ? 2 : 1), 0)
+      return 1 + (s.status === 'failed' && s.reason ? 1 : 0) + peekRows
+    })
+    const firstOpen = list.steps.findIndex(s => !isClosed(s))
+    const focusStep = peeked ?? (firstOpen === -1 ? list.steps.length - 1 : firstOpen)
+    const room = e.props.maxRows - (e.props.isWorking ? 3 : 0) - fixedRows
+    const { start: shownFrom, end: shownTo } = stepWindow(stepRows, focusStep, room)
+    const before = list.steps.slice(0, shownFrom)
+    const beforeFailed = before.filter(s => s.status === 'failed').length
+
     const textW = Math.max(16, Math.min(44, Math.floor(inner * 0.4)))
     const miniW = 12
     const statusW = 9
@@ -815,7 +852,14 @@ export const register: Register = on => {
             </Box>
           ) : null}
 
+          {shownFrom > 0 ? (
+            <Box key="steps-before" flexDirection="row">
+              <Text color={beforeFailed > 0 ? PINK : GREEN_TO}>{beforeFailed > 0 ? '✗ ' : '✓ '}</Text>
+              <Text dimColor>{`… ${before.length - beforeFailed} done${beforeFailed > 0 ? ` · ${beforeFailed} failed` : ''}`}</Text>
+            </Box>
+          ) : null}
           {list.steps.map((step, i) => {
+            if (i < shownFrom || i >= shownTo) return null
             const word = statusWord(list.steps, i)
             const isActive = step.status === 'active'
             const calls = step.calls ?? []
@@ -888,6 +932,7 @@ export const register: Register = on => {
               </Box>
             )
           })}
+          {shownTo < list.steps.length ? <Text key="steps-after" dimColor>{`○ ${list.steps.length - shownTo} more`}</Text> : null}
         </Box>
       </Box>
     )
