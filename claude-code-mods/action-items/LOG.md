@@ -1,5 +1,17 @@
 # Action Items log
 
+## 6.1.0 (2026-10-10)
+
+**Asked for:** the box carried asks from one conversation into another: a new conversation asked for things that belonged to the other one.
+
+**Cause:** the box was saved in one place shared by every conversation, and each new one loaded it.
+
+**Changed:**
+- Each conversation's box is saved under its own session id. A new conversation starts empty, and two open at once no longer share a box
+- Resuming a conversation (`claude --resume`) brings its own box back
+- `/clear` empties the box, since it starts a new conversation
+- The 20 most recent conversations' boxes are kept; older ones and the old shared copy are deleted
+
 ## 6.0.0 (2026-10-10)
 
 **Asked for:** (screenshots) the box kept filling with things that weren't asks: a "What it does: 1. Finds… 2. Downloads… 3. Prints…" explanation became three actions, and an optional "How to test it yourself" block became "Run this command". It needs to always be accurate. Picked: only Claude fills it.

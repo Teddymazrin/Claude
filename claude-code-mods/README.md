@@ -4,9 +4,9 @@ Six mods for Claude Code. They work in the terminal and in the desktop app's Cod
 
 | Mod | Latest | What it does |
 | --- | --- | --- |
-| [Bare View](#bare-view) | 1.11.0 | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
+| [Bare View](#bare-view) | 1.13.0 | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.8.1 | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Action Items](#action-items) | 6.0.0 | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
+| [Action Items](#action-items) | 6.1.0 | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | 1.3.0 | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
 | [Context Lens](#context-lens) | 1.1.0 | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -36,7 +36,7 @@ Run `/reload-plugins` to load them, or start a new session.
 
 ## Bare View
 
-A live task checklist above the prompt: the goal, a progress bar, each step and a timer. Tool calls and in-progress text are hidden, so only the checklist and the final answer show. The final answer leads with the result in a few sentences, and the checklist updates at the start, when the plan changes, and at the end.
+A live task checklist above the prompt: the goal, a progress bar, each step and a timer. Tool calls and in-progress text are hidden, so only the checklist and the final answer show. Every final answer has the same short shape: a **Summary** of 1-3 sentences, **Worth knowing** (up to 3 bullets, only if any), and any decisions or actions (including how-to steps and commands) in the Action Items box. Prose stays under about 80 words unless you asked for an explanation. The shape is repeated in the result of the call that finishes the checklist, right before Claude writes the answer, so long turns stick to it too. Also, the checklist moves one step at a time: Claude ticks off each step as it finishes it with a short `{"advance": true}` call, and resends the whole list only when the plan changes or a step fails.
 
 - **Activity:** while Claude is working, a row under the progress bar says what it's doing right now, with a timer: `◐ Thinking 6s`, `Writing`, `Waiting for the model`, `Starting Edit`, or `Running Bash` (the tool only, not the command), plus `· 2 agents working` when subagents are busy. It shows on every turn, including slash commands, turns Claude starts by itself (goal `Continuing`), and turns with no task list. While a permission dialog is open it reads `⏸ Waiting for you to approve Bash` in orange (it stays on that until the approved tool finishes)
 - **Folds when finished:** once every step is done, the band shrinks to one line, `✓ All 4 done · 2m 13s · 14 tool calls · 1 error ▸`. Click it to see the full checklist, and click `▾ All 4 done` to fold it again
@@ -88,6 +88,8 @@ The box opens on Decide while a question waits and moves to Do once they're answ
 **Answering by typing:** a typed message doesn't wipe the box. Claude is told which questions are still open and clears only the ones your message answered.
 
 **Only Claude fills it:** the box shows only what Claude put there itself. The mod doesn't guess from the reply, so nothing in the box is a false alarm. If Claude forgets the box, the steps are still in its reply.
+
+**One box per conversation:** each conversation keeps its own asks. A new conversation (or `/clear`) starts with an empty box, and resuming a conversation brings its box back.
 
 **Closing it:** the box closes when everything is answered and done, or with ✕. When one set is done, the box moves on to the next one still waiting. ✕ only hides the box; `/action-items` brings back what's still open. **Clear** (next to ✕) drops the set you're looking at for good, done or not, so the box never goes back to it. **Clear all N** shows when more than one set is still open, and empties the box.
 

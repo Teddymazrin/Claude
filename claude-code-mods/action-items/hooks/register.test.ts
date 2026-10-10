@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
+import { addSet, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -122,4 +122,11 @@ test('the reminder goes along only until a system prompt carries the instruction
   expect(withReminder(['x'], false)).toEqual(['x', REMINDER])
   expect(withReminder(['x'], true)).toEqual(['x'])
   expect(withReminder([], true)).toEqual([])
+})
+
+test('each conversation keeps its own box; the oldest past 20 and the old shared key are dropped', () => {
+  expect(storeKey('abc')).toBe('sets:abc')
+  const keys = ['sets', ...Array.from({ length: 22 }, (_, i) => `sets:s${i}`)]
+  expect(staleKeys(keys)).toEqual(['sets', 'sets:s0', 'sets:s1'])
+  expect(staleKeys(['sets:a', 'sets:b'])).toEqual([])
 })

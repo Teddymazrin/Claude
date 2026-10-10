@@ -206,10 +206,29 @@ export const doLevel = (list: readonly Action[], columns: number, maxRows: numbe
   // step left rows that neither showed everything nor folded to a line.
   ([0, 1] as const).find(l => doRows(list, columns, l, isInfo) <= maxRows) ?? 3
 
-// Every change goes to the session's state (redraws the box) and the store (kept across sessions).
+// Conversations whose box is kept; the oldest is dropped past this.
+const KEEP_SESSIONS = 20
+
+/** Where a conversation's box is kept: one key per session id, so another conversation never loads it. */
+export const storeKey = (sessionId: string) => `sets:${sessionId}`
+
+/** The stored conversations to drop, oldest first, so only the newest `KEEP_SESSIONS` stay. */
+export const staleKeys = (keys: readonly string[]) => {
+  const saved = keys.filter(k => k.startsWith('sets:'))
+  return [...keys.filter(k => k === 'sets'), ...saved.slice(0, Math.max(0, saved.length - KEEP_SESSIONS))]
+}
+
+// Every change goes to the session's state (redraws the box) and the store, under this conversation's
+// id, so a resumed conversation gets its box back and a new one starts empty.
 async function save($: EngineInterface, fn: (list: StepSet[]) => StepSet[]) {
   const next = await update($, sets, list => fn(list))
-  await $.store.set('sets', next).catch(() => {})
+  try {
+    const key = storeKey(await $.session.id())
+    // Set last, so the store's order is oldest-used first.
+    await $.store.delete(key)
+    await $.store.set(key, next)
+    for (const k of staleKeys(await $.store.keys())) await $.store.delete(k)
+  } catch {}
   return next
 }
 
@@ -446,11 +465,21 @@ export const register: Register = on => {
       },
     })
     await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you' })
-    // Bring back what earlier sessions pinned; sets from before decisions existed are dropped.
+    // Bring back this conversation's box when it is resumed; sets from before decisions existed are dropped.
     if ((await read($, sets)).length === 0) {
-      const stored = (await $.store.get('sets')) as StepSet[] | undefined
+      const stored = (await $.store.get(storeKey(await $.session.id()))) as StepSet[] | undefined
       const usable = Array.isArray(stored) ? stored.filter(s => Array.isArray(s?.items)) : []
       if (usable.length > 0) await update($, sets, () => usable)
+    }
+    return next(e)
+  })
+
+  // A /clear starts a new conversation in the same process: its box starts empty.
+  on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear') {
+      await update($, sets, () => [])
+      await update($, band, () => null)
+      await update($, tab, () => null)
     }
     return next(e)
   })
