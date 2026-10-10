@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EFFORTS, MODELS, QUICK, SETTINGS, isSetting, settingRows, visibleQuick, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, baseModel, cacheText, cacheTtlMs, pickLimit, pickWeek, resetText, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { BLURB_MAX, EFFORTS, MODELS, QUICK, SETTINGS, isSetting, settingRows, visibleQuick, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, baseModel, cacheText, cacheTtlMs, pickLimit, pickWeek, resetText, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -190,4 +190,8 @@ test('settings list only Bare View and Guard Rails, in order, with short lines',
   expect(settingRows([{ name: 'action-steps' }])).toEqual([])
   expect(isSetting('context-handoff')).toBe(false)
   for (const s of SETTINGS) expect(s.line.length).toBeLessThanOrEqual(36)
+})
+
+test('every blurb fits on one line of the narrow pane', () => {
+  for (const line of [...QUICK.map(q => q.blurb), ...SETTINGS.map(setting => setting.line)]) expect(line.length).toBeLessThanOrEqual(BLURB_MAX)
 })

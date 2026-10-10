@@ -13,6 +13,8 @@ export const RELOAD_DELAY_MS = 1500
 // The dock width the pane asks for, and the width from which rows show their blurbs.
 const PANE_COLUMNS = 46
 const WIDE_COLUMNS = 64
+// The longest blurb: the narrow pane less its padding, so a blurb never truncates.
+export const BLURB_MAX = PANE_COLUMNS - 4
 
 // Palette: warm gold title, orange for the model, mauve for effort, green for on.
 const GOLD = '#d9a441'
@@ -597,7 +599,7 @@ export const register: Register = on => {
       </Box>
     )
 
-    // Narrow by default: the one-line blurbs only show once the pane has room for them.
+    // Wide: the blurb sits beside the name. Narrow: on its own line under it, so it never runs off.
     const isWide = e.props.bodyColumns >= WIDE_COLUMNS
 
     const picker = (label: string, children: RenderChildren) => (
@@ -613,18 +615,24 @@ export const register: Register = on => {
       </Box>
     )
 
-    // A settings or actions row: the name, the blurb when there's room, the button at the right edge.
-    const row = (key: string, name: RenderChildren, blurb: string, button: RenderChildren) => (
-      <Box key={key} flexDirection="row" hover={{ backgroundColor: SLATE }}>
-        <Box flexGrow={1} flexShrink={1} flexDirection="row">
-          <Box width={isWide ? 18 : undefined} flexShrink={0}>
-            {name}
+    // A settings or actions row: the name and its one-line blurb, the button at the right edge.
+    const row = (key: string, name: RenderChildren, blurb: string, button: RenderChildren) => {
+      const line = <Text color={MUTED} wrap="truncate-end">{blurb}</Text>
+      return (
+        <Box key={key} flexDirection="column" marginBottom={isWide ? 0 : 1} hover={{ backgroundColor: SLATE }}>
+          <Box flexDirection="row">
+            <Box flexGrow={1} flexShrink={1} flexDirection="row">
+              <Box width={isWide ? 18 : undefined} flexShrink={0}>
+                {name}
+              </Box>
+              {isWide && line}
+            </Box>
+            {button}
           </Box>
-          {isWide && <Text color={MUTED} wrap="truncate-end">{blurb}</Text>}
+          {!isWide && line}
         </Box>
-        {button}
-      </Box>
-    )
+      )
+    }
 
     return (
       // Black floor to ceiling: the body only grows to fit its tree, so the box asks for every row the dock has.
