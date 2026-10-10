@@ -49,6 +49,8 @@ declare module 'claude-code' {
       info: string[]
       /** True once a system prompt this session carries the instructions, so prompts skip the reminder. */
       composed: boolean
+      /** True once /action-items opened the box mid-turn; while Claude works it folds to one line otherwise. */
+      expanded: boolean
     }
   }
 }

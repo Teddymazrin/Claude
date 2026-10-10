@@ -1,5 +1,14 @@
 # Action Items log
 
+## 6.3.0 (2026-10-10)
+
+**Asked for:** with Bare View's checklist and this box stacked above the prompt, a short terminal cuts one of them off.
+
+**Changed:**
+- While Claude is working, the box folds to one line: "⚑ CLAUDE NEEDS YOU · <title> · 1 to decide". It opens in full again when the turn ends
+- `/action-items` opens it mid-turn (the box's own buttons wait for the turn to end); the next prompt folds it again
+- Bare View already folds a finished checklist to one line, so only one of the two boxes is ever full size
+
 ## 6.2.0 (2026-10-10)
 
 **Asked for:** Copy on commands can be janky; and the box can't be cleared or closed while Claude is working, only once it stops.

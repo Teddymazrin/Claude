@@ -300,3 +300,30 @@ test('/action-items clear, clear all and hide work from the prompt, mid-turn too
   expect(await $.command.run({ command: 'action-items', args: 'clear all' } as never)).toEqual({ text: 'Box emptied.' })
   expect(await $.command.run({ command: 'action-items', args: 'clear' } as never)).toEqual({ text: 'Nothing to clear.' })
 })
+
+test('while Claude works the box folds to one line; /action-items opens it until the next prompt', async ($, on) => {
+  on('clock.now', () => ({ value: 9_000 }))
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Ship', decisions: [{ question: 'Merge now?', options: ['Yes', 'Wait'] }] } as never)
+  const WORKING = { ...BAND, props: { ...BAND.props, isWorking: true } }
+  let ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...WORKING } as never)
+  expect(await ui.find({ type: 'Text', text: /Ship · 1 to decide/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Merge now\?/ })).toBeUndefined()
+  await ui.unmount()
+  await $.command.run({ command: 'action-items' } as never)
+  ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...WORKING } as never)
+  expect(await ui.find({ type: 'Text', text: /Merge now\?/ })).toBeDefined()
+  await ui.unmount()
+  // A new prompt folds it again; once the turn ends it is whole.
+  await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+  ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...WORKING } as never)
+  expect(await ui.find({ type: 'Text', text: /Merge now\?/ })).toBeUndefined()
+  await ui.unmount()
+  ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
+  expect(await ui.find({ type: 'Text', text: /Merge now\?/ })).toBeDefined()
+  await ui.unmount()
+})

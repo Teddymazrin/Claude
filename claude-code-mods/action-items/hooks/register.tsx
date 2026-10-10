@@ -20,6 +20,8 @@ const showDone = atom({ plugin: 'action-items', key: 'showDone' } as const, fals
 const info = atom({ plugin: 'action-items', key: 'info' } as const, [] as string[])
 // True once a system prompt carries the instructions; until then each prompt carries the reminder.
 const composed = atom({ plugin: 'action-items', key: 'composed' } as const, false)
+// True once /action-items opened the box out mid-turn; each new prompt folds it again.
+const expanded = atom({ plugin: 'action-items', key: 'expanded' } as const, false)
 
 // One accent, Claude's orange, on neutral greys: orange frame and header, near-white text,
 // charcoal buttons that turn orange on hover.
@@ -520,6 +522,7 @@ export const register: Register = on => {
   // not yet sent go along with it.
   on('prompt.submit', async ($, e, next) => {
     if (e.text.trim().startsWith('/')) return next(e)
+    await update($, expanded, () => false)
     const context = withReminder(e.context ?? [], await read($, composed))
     // A typed reply settles only what it answers: answers typed after "Other…" are read from it,
     // clicked ones go along, and Claude is told which questions still wait, to clear those it answered.
@@ -573,6 +576,23 @@ export const register: Register = on => {
     const set = shownSet(list, id)
     if (!set) return below
     const { Box, Text, Button } = $.ui.resolve(e)
+    // While Claude works the checklist needs the room: the box folds to one line.
+    // Buttons wait for the turn to end, so /action-items (immediate) is what opens it.
+    if (e.props.isWorking && !(await read($, expanded))) {
+      return (
+        <Box flexDirection="column">
+          <Box key="action-items-folded" flexDirection="row" justifyContent="space-between" borderStyle="round" borderColor={C.frame} paddingX={1}>
+            <Text>
+              <Text bold color={C.title}>{'⚑ CLAUDE NEEDS YOU'}</Text>
+              <Text dimColor>{'  ·  '}</Text>
+              <Text>{`${set.title} · ${countText(set)}`}</Text>
+            </Text>
+            <Text dimColor>{'/action-items ▸'}</Text>
+          </Box>
+          {below}
+        </Box>
+      )
+    }
     const openCount = list.filter(isOpen).length
     const decide = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Decision; i: number } => x.it.kind === 'decide')
     const doing = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Action; i: number } => x.it.kind === 'do')
@@ -706,6 +726,7 @@ export const register: Register = on => {
     const open = nextSet(await read($, sets))
     if (!open) return { text: 'Nothing open: Claude needs nothing from you right now.' }
     await update($, band, () => open.id)
+    await update($, expanded, () => true)
     return { text: `Showing ${open.title} (${countText(open)}) above the prompt.` }
   })
 }
