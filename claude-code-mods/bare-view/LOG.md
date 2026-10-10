@@ -1,5 +1,11 @@
 # Bare View log
 
+## 1.13.2 (2026-10-10)
+
+**Found in use:** after a finished answer, the checklist's last step could stay on "Working" when Claude forgot the final advance.
+
+**Changed:** when a turn ends with an answer, the step still marked Working is marked done (and the timer stops if that was the last open step). Steps never started stay as they were, and an interrupted or failed turn keeps its list as it stood. No extra tokens: it runs in the mod, nothing is sent to the model.
+
 ## 1.13.1 (2026-10-10)
 
 **Found in use:** scrolling back, only your prompts and the latest answer showed. Earlier answers were gone, and asked for a way to expand them.

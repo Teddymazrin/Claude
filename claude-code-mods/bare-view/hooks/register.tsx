@@ -101,6 +101,12 @@ export const advanceChecklist = (list: Checklist): Checklist => {
   return { ...list, steps }
 }
 
+/** A turn that answered: the step still working is done; steps never started stay as they are. */
+export const finishActive = (list: Checklist): Checklist =>
+  list.steps.some(s => s.status === 'active')
+    ? { ...list, steps: list.steps.map(s => (s.status === 'active' ? { ...s, status: 'done' as const } : s)) }
+    : list
+
 /** The MCP server a tool name belongs to (`mcp__<server>__<tool>`), shortened; undefined for a built-in tool. */
 export const mcpServer = (tool: string) => {
   const match = /^mcp__(.+?)__/.exec(tool)
@@ -505,6 +511,16 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       runningCalls.clear()
       await update($, activity, () => null).catch(() => {})
+      // The answer is in, so a last step left on Working was finished but never advanced.
+      // An interrupted or failed turn keeps its list, to show where it stopped.
+      if (e.reason === 'answer') {
+        const now = await $.clock.now()
+        await update($, checklist, cur => {
+          if (!cur || !cur.steps.some(s => s.status === 'active')) return cur
+          const done = finishActive(cur)
+          return isInProgress(done) ? done : { ...done, finishedAt: now }
+        }).catch(() => {})
+      }
     }
     return next(e)
   })

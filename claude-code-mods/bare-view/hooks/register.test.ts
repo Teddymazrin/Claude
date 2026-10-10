@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, advanceChecklist, isClosed, isMuted, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel } from './register'
+import { PEEK_MAX, advanceChecklist, finishActive, isClosed, isMuted, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -252,4 +252,14 @@ test('a message keeps the verdict of its first drawing, so earlier answers stay 
   // A scroll or resize redraws the old answer while that checklist is open: still shown.
   expect(isMuted(verdicts, 'answer-1', true)).toBe(false)
   expect(isMuted(verdicts, 'working-2', false)).toBe(true)
+})
+
+test('an answered turn finishes the step left working, and only that one', () => {
+  const list = { goal: 'Ship it', steps: [{ text: 'One', status: 'done' as const }, { text: 'Two', status: 'active' as const }, { text: 'Three', status: 'todo' as const }] }
+  expect(finishActive(list).steps.map(s => s.status)).toEqual(['done', 'done', 'todo'])
+  const last = { goal: 'Ship it', steps: [{ text: 'One', status: 'done' as const }, { text: 'Two', status: 'active' as const }] }
+  expect(isInProgress(finishActive(last))).toBe(false)
+  // Nothing working: left as it is.
+  const failed = { goal: 'Ship it', steps: [{ text: 'One', status: 'failed' as const, reason: 'No push' }] }
+  expect(finishActive(failed)).toBe(failed)
 })
