@@ -1,5 +1,15 @@
 # Action Items log
 
+## 6.0.0 (2026-10-10)
+
+**Asked for:** (screenshots) the box kept filling with things that weren't asks: a "What it does: 1. Finds… 2. Downloads… 3. Prints…" explanation became three actions, and an optional "How to test it yourself" block became "Run this command". It needs to always be accurate. Picked: only Claude fills it.
+
+**Changed:**
+- Removed the end-of-turn check that copied numbered lists, command blocks and closing questions out of Claude's reply into the box ("From Claude's reply", "Claude asked"). Guessing from the reply's shape kept missing new cases, and only Claude knows what it needs from you
+- The box now shows only what Claude put there with the tool, so nothing in it is a guess
+- Still no tokens: the instruction that steps and commands go in the box stays as it was
+- Not caught any more: a reply where Claude forgets the box. The steps are still in the reply
+
 ## 5.1.0 (2026-10-09)
 
 **Asked for:** actions the mod copies out of Claude's reply had nothing behind **▸ info**. Picked: use the line that introduces them, for free.

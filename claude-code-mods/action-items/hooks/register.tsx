@@ -8,7 +8,6 @@ const COMMAND = 'action-items'
 const TOOL = 'action_items'
 const TOOL_ID = `mcp__${PLUGIN}__${TOOL}`
 const KEEP = 8
-const MAX_CAUGHT = 4
 
 const sets = atom({ plugin: 'action-items', key: 'sets' } as const, [])
 const band = atom({ plugin: 'action-items', key: 'band' } as const, null)
@@ -207,89 +206,6 @@ export const doLevel = (list: readonly Action[], columns: number, maxRows: numbe
   // step left rows that neither showed everything nor folded to a line.
   ([0, 1] as const).find(l => doRows(list, columns, l, isInfo) <= maxRows) ?? 3
 
-// One sentence: a stop or question mark not followed by a space stays inside it ("v1.2", "e.g.x").
-const SENTENCE = /(?:[^.!?]|[.!?](?=\S))+[.!?]*/g
-const unmark = (s: string) =>
-  s.replace(/^\s*(?:[-*+>]|\d+[.)])\s+/, '').replace(/\*\*|__|`/g, '').trim()
-
-/** The questions a reply ends on: the last paragraph's, when it ends asking something. */
-export const findQuestions = (answer: string): string[] => {
-  const paras = answer
-    .replace(/```[\s\S]*?```/g, '')
-    .split(/\n\s*\n/)
-    .map(p => p.trim())
-    .filter(Boolean)
-  const last = paras[paras.length - 1] ?? ''
-  const parts = last
-    .split('\n')
-    .map(unmark)
-    .flatMap(l => (l.match(SENTENCE) ?? []).map(s => s.trim()))
-    .filter(Boolean)
-  if (!parts[parts.length - 1]?.endsWith('?')) return []
-  return parts
-    .filter(s => s.endsWith('?'))
-    .slice(-MAX_CAUGHT)
-    .map(s => (s.length > 160 ? `${s.slice(0, 157)}...` : s))
-}
-
-// Fences a command sits in; a block in any other language is code to read, not to run.
-const SHELL = /^(?:powershell|pwsh|ps1?|bash|sh|zsh|shell|console|cmd|bat)?$/i
-const RUN_THIS = 'Run this command'
-// An unlabelled block that opens like data (JSON, XML, a quoted string) is to read, not run.
-const DATA = /^[{[<"']/
-// A list item that is not a step: a report ("Fixed the bug"), a bold title ("**Tests:** …", "**Option A.** …"),
-// a question, or a statement ("The engine loads…", "Each hook runs…").
-const NOT_STEP = /^\w+ed\b|^(?:the|a|an|this|that|these|those|each|every|it|its|they|there|we|i|our|your|my)\b/i
-
-/**
- * The steps a reply leaves the user, by its shape rather than its words: each numbered item, with the
- * shell block straight under it as its command, and a shell block under no item as an action of its own.
- * One item that is not a step makes its whole reply's list not steps. The line that introduces a list or
- * block ("To check the version:") becomes each action's why.
- */
-export const findActions = (answer: string): Action[] => {
-  const actions: Action[] = []
-  // An item a shell block can still attach to: no prose since it.
-  let open: Action | null = null
-  let isNotSteps = false
-  // The prose line just before, when it introduces what follows (ends with a colon).
-  let lead: string | undefined
-  const withWhy = (a: Action): Action => (lead ? { ...a, why: lead } : a)
-  for (const part of answer.split(/(```[^\n]*\n[\s\S]*?```)/)) {
-    const fence = part.match(/^```([^\n]*)\n([\s\S]*?)```$/)
-    if (fence) {
-      const lang = fence[1]!.trim()
-      const command = fence[2]!.trim()
-      if (command && SHELL.test(lang) && !(lang === '' && DATA.test(command))) {
-        if (open && !open.command) open.command = command
-        else actions.push(withWhy({ kind: 'do', text: RUN_THIS, command, isDone: false }))
-      }
-      open = null
-      lead = undefined
-      continue
-    }
-    for (const line of part.split('\n')) {
-      if (!line.trim()) continue
-      const item = line.match(/^\s*\d+[.)]\s+(.*)$/)
-      if (!item) {
-        open = null
-        const prose = unmark(line)
-        lead = prose.endsWith(':') && !prose.startsWith('#') ? prose.slice(0, -1).trim() || undefined : undefined
-        continue
-      }
-      const text = unmark(item[1]!)
-      if (!text || item[1]!.startsWith('**') || text.endsWith('?') || NOT_STEP.test(text)) {
-        isNotSteps = true
-        open = null
-        continue
-      }
-      open = withWhy({ kind: 'do', text, isDone: false })
-      actions.push(open)
-    }
-  }
-  return (isNotSteps ? actions.filter(a => a.text === RUN_THIS) : actions).slice(0, KEEP)
-}
-
 // Every change goes to the session's state (redraws the box) and the store (kept across sessions).
 async function save($: EngineInterface, fn: (list: StepSet[]) => StepSet[]) {
   const next = await update($, sets, list => fn(list))
@@ -483,9 +399,6 @@ function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, ind
   )
 }
 
-// What Claude did not put in the box itself this turn; reset as each turn starts.
-let isAskedThisTurn = false
-
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.tool.register({
@@ -576,16 +489,6 @@ export const register: Register = on => {
     return next({ ...e, context })
   }).catch(($, e, next) => next(e))
 
-  on('turn.start', async ($, e, next) => {
-    isAskedThisTurn = false
-    return next(e)
-  })
-
-  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
-    isAskedThisTurn = true
-    return next(e)
-  })
-
   on('tool.call', { tool: TOOL_ID }, async ($, e) => {
     const input = e as unknown as Record<string, unknown>
     // Only clearing questions answered in chat.
@@ -603,27 +506,10 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const parsed = parseSet(e as unknown as Record<string, unknown>, String(now), now)
     if (typeof parsed === 'string') return { result: `Not saved: ${parsed}`, isError: true }
-    isAskedThisTurn = true
     await show($, parsed)
     const clicks = decisions(parsed).some(d => d.options.length > 0) ? ' Their clicked answers come back to you as their next message.' : ''
     return { result: `Shown in the Action Items box above the prompt (${countText(parsed)}). Tell the user it is there instead of repeating it.${clicks}` }
   })
-
-  // The safety net, free of tokens: a reply with nothing put in the box gets its questions, numbered
-  // steps and commands put there by the mod itself.
-  on('turn.complete', async ($, e, next) => {
-    const done = await next(e)
-    if (e.reason !== 'answer' || e.agentId || isAskedThisTurn) return done
-    const items: Item[] = [
-      ...findQuestions(e.answer).map((text): Item => ({ kind: 'decide', text, options: [] })),
-      ...findActions(e.answer),
-    ]
-    if (items.length === 0) return done
-    const now = await $.clock.now()
-    const title = items.some(i => i.kind === 'do') ? "From Claude's reply" : 'Claude asked'
-    await show($, { id: String(now), title, items, at: now })
-    return done
-  }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)

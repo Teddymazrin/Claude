@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, findQuestions, findActions, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
+import { addSet, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -56,48 +56,6 @@ test('keeps the newest first and replaces a same-titled set', () => {
   list = addSet(list, mk('2', 'B'))
   list = addSet(list, mk('3', 'A'))
   expect(list.map(s => s.id)).toEqual(['3', '2'])
-})
-
-test('finds the questions a reply ends on, and only then', () => {
-  expect(findQuestions('Done.\n\nWhich one do you want to start with?')).toEqual(['Which one do you want to start with?'])
-  expect(findQuestions('I built it. Should I ship v1.2? Or wait for tests?')).toEqual(['Should I ship v1.2?', 'Or wait for tests?'])
-  expect(findQuestions('Two things:\n- **Keep** the old API?\n- Rename `foo`?')).toEqual(['Keep the old API?', 'Rename foo?'])
-  expect(findQuestions('Is it ok? I went ahead anyway.')).toEqual([])
-  expect(findQuestions('All done.\n\n```\nwhy?\n```')).toEqual([])
-  expect(findQuestions('')).toEqual([])
-})
-
-test('takes the steps a reply leaves the user from its shape, not its words', () => {
-  const texts = (s: string) => findActions(s).map(a => [a.text, a.command])
-  // Numbered steps, whatever the verb; a shell block straight under an item is its command.
-  expect(texts('1. Go to Settings\n2. Drag **Apps** to the top\n3. Restart:\n\n```powershell\nRestart-Computer\n```')).toEqual([
-    ['Go to Settings', undefined],
-    ['Drag Apps to the top', undefined],
-    ['Restart:', 'Restart-Computer'],
-  ])
-  // A shell block after prose stands as its own action.
-  expect(texts('1. Right-click **Open-Google.ps1**.\n\nIf it closes, run this once:\n\n```powershell\nSet-ExecutionPolicy RemoteSigned\n```')).toEqual([
-    ['Right-click Open-Google.ps1.', undefined],
-    ['Run this command', 'Set-ExecutionPolicy RemoteSigned'],
-  ])
-  // Reports, labelled points, code to read and inline names are not steps.
-  expect(findActions('1. Read the config\n2. Fixed the bug')).toEqual([])
-  expect(findActions('1. **Validate:** ran on each mod\n2. **Tests:** all pass')).toEqual([])
-  expect(findActions('Here it is:\n\n```ts\nconst x = 1\n```')).toEqual([])
-  // Questions (the question check has them), bold-titled options, statements and unlabelled data.
-  expect(findActions('Two things:\n\n1. Which region?\n2. Keep the old name?')).toEqual([])
-  expect(findActions('1. **Shape check (free).** Reads the shape.\n2. **Haiku check.** Small cost.')).toEqual([])
-  expect(findActions('1. The engine loads the module\n2. Each hook runs in order')).toEqual([])
-  expect(findActions('Config:\n\n```\n{ "a": 1 }\n```')).toEqual([])
-  // The line introducing a list or block becomes each action's why; a plain sentence does not.
-  const whys = (s: string) => findActions(s).map(x => x.why)
-  expect(whys('To clear the old versions:\n\n1. Close Claude Code\n2. Open PowerShell')).toEqual(['To clear the old versions', 'To clear the old versions'])
-  expect(whys('Done.\n\nTo check the installed version yourself:\n\n```powershell\nGet-ChildItem x\n```')).toEqual(['To check the installed version yourself'])
-  expect(whys('All set.\n\n1. Close Claude Code')).toEqual([undefined])
-  // An unlabelled block that reads as a command still counts.
-  expect(texts('Then:\n\n```\naz login\n```')).toEqual([['Run this command', 'az login']])
-  expect(findActions('The fix is in `register.tsx:689`.')).toEqual([])
-  expect(findActions('')).toEqual([])
 })
 
 test('the tool call saves the set and answers the model', async ($, on) => {
