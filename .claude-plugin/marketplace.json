@@ -34,6 +34,11 @@
       "name": "context-lens",
       "source": "./claude-code-mods/context-lens",
       "description": "Shows what is filling your context window, by category, in a pane"
+    },
+    {
+      "name": "tenant-lens",
+      "source": "./claude-code-mods/tenant-lens",
+      "description": "Shows the Azure tenant, subscription and account in use, under the prompt; no tokens"
     }
   ]
 }

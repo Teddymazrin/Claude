@@ -575,14 +575,26 @@ export const register: Register = on => {
     const below = await next(e)
     const { Box, Button } = $.ui.resolve(e)
     const label = chipText()
-    const isEmptyEngine = 'type' in below && below.type === 'engine' && e.props.modes.length === 0
+    const isEngine = 'type' in below && below.type === 'engine'
+    const isEmptyEngine = isEngine && e.props.modes.length === 0
+    const chip = (
+      <Box key="control-panel-chip" backgroundColor={ORANGE} paddingX={1}>
+        <Button key="open-control-panel" plain label={label} hover={{ bold: true }} onPress={() => togglePane($)} />
+      </Box>
+    )
 
+    // Another mod's chip (Tenant Lens) is beneath: sit to its right, on the bottom line.
+    if (!isEngine)
+      return (
+        <Box flexDirection="row" alignItems="flex-end">
+          <Box marginRight={1}>{below}</Box>
+          {chip}
+        </Box>
+      )
     return (
       <Box flexDirection="column" alignItems="flex-end">
         {!isEmptyEngine && below}
-        <Box key="control-panel-chip" backgroundColor={ORANGE} paddingX={1}>
-          <Button key="open-control-panel" plain label={label} hover={{ bold: true }} onPress={() => togglePane($)} />
-        </Box>
+        {chip}
       </Box>
     )
   })

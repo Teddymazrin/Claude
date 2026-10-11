@@ -1,14 +1,15 @@
 # Claude Code mods
 
-Six mods for Claude Code. They work in the terminal and in the desktop app's Code tab.
+Seven mods for Claude Code. They work in the terminal and in the desktop app's Code tab.
 
 | Mod | Latest | What it does |
 | --- | --- | --- |
 | [Bare View](#bare-view) | 1.13.1 | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
-| [Control Panel](#control-panel) | 1.8.1 | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
+| [Control Panel](#control-panel) | 1.11.1 | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Action Items](#action-items) | 6.2.0 | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | 1.3.0 | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
+| [Tenant Lens](#tenant-lens) | 1.1.0 | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
 | [Context Lens](#context-lens) | 1.1.0 | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
 
 `claude plugin list` shows the version you have installed; if it's behind **Latest**, see [Updating the mods](#updating-the-mods).
@@ -30,6 +31,7 @@ Then install the mods you want, one line each (press Enter for the user scope):
 /plugin install guard-rails@teddymazrin-mods
 /plugin install context-handoff@teddymazrin-mods
 /plugin install context-lens@teddymazrin-mods
+/plugin install tenant-lens@teddymazrin-mods
 ```
 
 Run `/reload-plugins` to load them, or start a new session.
@@ -136,6 +138,28 @@ Keeps a long session from losing its thread when the context window fills.
 
 The usual flow is `/handoff`, then **⧉ Copy prompt**, then `/clear` (or **Clear** in Control Panel), then paste.
 
+## Tenant Lens
+
+Shows which Azure tenant and subscription your tools are pointed at, so a script that changes every subscription never runs against the wrong one. An **Azure Context** button in the bottom-right corner, left of **◆ Control Panel**:
+
+```
+                             Tenant:        contoso.onmicrosoft.com
+                                            72f988bf-86f1-41af-91ab-2d7cd011db47
+                             Subscription:  Contoso Dev
+                                            00000000-1111-2222-3333-444444444444
+                                              ▾ Azure Context  ◆ Control Panel
+```
+
+- **Click to reveal:** the tenant and the subscription open above the button in a black box, each name with its id on the line under it. Click again to hide them
+- **The tenant's domain:** read from the Azure files when they hold it. They don't when you signed in with `az login --tenant`, so the first time you open the details for such a tenant, az looks the domain up (`az rest` on Azure Resource Manager's tenant list) and it's remembered from then on. That one call goes to Azure with your own sign-in and uses no Claude tokens. If az isn't signed in, the box says `domain unknown: run az login to show it`
+- **Production in red:** when the subscription's name has `prod`, `production`, `prd` or `live` in it, the button turns from Azure blue to red, so you see it without opening it
+- **When the two tools differ:** the button reads `Azure Context ≠`, and the reveal lists az CLI and Az PowerShell separately, with an orange line saying they point at different subscriptions
+- **Where it looks:** az CLI's `~/.azure/azureProfile.json` (or `AZURE_CONFIG_DIR`) and Az PowerShell's `~/.Azure/AzureRmContext.json`. It reads these local files: no sign-in, no tokens, and nothing goes into Claude's context. The only network call is the one-time domain lookup above
+- **Stays current:** it rereads after every Bash and PowerShell call (where `az login`, `az account set` and `Set-AzContext` usually run) and once a minute
+- **`/tenant-lens`:** prints the full subscription, tenant and account, with ids, for both tools
+- **Not signed in:** with neither file present the button doesn't show. These files say what each tool last selected, not that the sign-in is still valid
+- **Az PowerShell** only saves its file while context autosave is on (the default; `Enable-AzContextAutosave` turns it back on)
+
 ## Context Lens
 
 Shows where your context window is going, so you can see what to trim before it fills. Run `/context-lens`, or press **Context Lens ▸ Open** in Control Panel, to open the pane:
@@ -193,6 +217,7 @@ claude plugin update action-items@teddymazrin-mods
 claude plugin update guard-rails@teddymazrin-mods
 claude plugin update context-handoff@teddymazrin-mods
 claude plugin update context-lens@teddymazrin-mods
+claude plugin update tenant-lens@teddymazrin-mods
 ```
 
 Then run `/reload-plugins` in a session that's already open, or restart Claude Code. A mod that's already on the latest version is left as it is. `claude plugin list` shows what's installed and at which version.
