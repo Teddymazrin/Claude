@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, advanceChecklist, finishActive, isClosed, isMuted, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel, stepWindow } from './register'
+import { PEEK_MAX, advanceChecklist, finishActive, isClosed, isMuted, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -262,14 +262,4 @@ test('an answered turn finishes the step left working, and only that one', () =>
   // Nothing working: left as it is.
   const failed = { goal: 'Ship it', steps: [{ text: 'One', status: 'failed' as const, reason: 'No push' }] }
   expect(finishActive(failed)).toBe(failed)
-})
-
-test('stepWindow shows every step that fits, else a run around the focus with room for the counts', () => {
-  expect(stepWindow([1, 1, 1], 1, 3)).toEqual({ start: 0, end: 3 })
-  // 10 steps, 4 rows: the focus, the next one, and a row each for the counts.
-  expect(stepWindow(Array(10).fill(1), 5, 4)).toEqual({ start: 5, end: 7 })
-  // At the end there is no "more" row, so one more step fits before.
-  expect(stepWindow(Array(10).fill(1), 9, 4)).toEqual({ start: 7, end: 10 })
-  // No room at all still shows the focus.
-  expect(stepWindow(Array(10).fill(1), 0, 0)).toEqual({ start: 0, end: 1 })
 })
