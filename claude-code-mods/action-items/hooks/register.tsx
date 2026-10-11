@@ -636,7 +636,8 @@ export const register: Register = on => {
 
     // Do: drawn whole when it fits; else ticked ones fold and only the next open action keeps
     // its command. Why and how-to show only where the person opened an action's info.
-    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows, a => isInfo('a', set.items.indexOf(a)))
+    // Three rows stay free for Bare View's finished checklist, folded to one line beside it.
+    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3, a => isInfo('a', set.items.indexOf(a)))
     const nextOpen = doing.find(x => !x.it.isDone)?.i
     const isDoneShown = await read($, showDone)
     const shown = level === 0 || isDoneShown ? doing : doing.filter(x => !x.it.isDone)

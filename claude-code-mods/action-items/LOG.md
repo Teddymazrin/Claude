@@ -1,5 +1,11 @@
 # Action Items log
 
+## 6.4.0 (2026-10-10)
+
+**Asked for:** both boxes stay in view as the window shrinks.
+
+**Changed:** when Claude is done, the box fits the rows left after Bare View's one-line finished checklist (three rows kept for it), so it no longer pushes the checklist out of view.
+
 ## 6.3.0 (2026-10-10)
 
 **Asked for:** with Bare View's checklist and this box stacked above the prompt, a short terminal cuts one of them off.

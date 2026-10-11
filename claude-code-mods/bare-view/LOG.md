@@ -1,5 +1,11 @@
 # Bare View log
 
+## 1.15.0 (2026-10-10)
+
+**Asked for:** as the terminal window is made smaller, both boxes above the prompt should stay in view instead of one scrolling away. Picked: the box that matters now stays whole, the other shrinks to one line.
+
+**Changed:** 1.14.0's fitting is back, now as part of that: while Claude works, the checklist fits the rows left after Action Items' one-line box. Steps that don't fit fold into "✓ … N done" above and "○ N more" below the working one.
+
 ## 1.14.1 (2026-10-10)
 
 **Reverted:** 1.14.0's step trimming in short terminals. It wasn't what was wanted. Bare View is back to 1.13.2's behaviour.
