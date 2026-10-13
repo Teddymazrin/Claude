@@ -61,6 +61,17 @@ test('counts down to the prompt cache going cold, and a new model starts cold', 
   expect(baseModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5')
 })
 
+test('a cold cache on a big chat warns that the next message uses extra usage', () => {
+  const now = Date.parse('2026-10-06T12:00:00Z')
+  const row = (context: number, cache: string) => statusText({ plan: 'Subscription', context, limit: null, week: null }, 'claude-opus-5-5', 'medium', now, cache)
+  expect(row(39, 'cache cold')).toBe('Subscription | Opus 5.5 | effort Medium | ctx ███░░░░░ 39% | cache cold')
+  expect(row(40, 'cache cold')).toBe(
+    'Subscription | Opus 5.5 | effort Medium | ctx ███░░░░░ 40% | cache cold ⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh',
+  )
+  expect(row(60, 'cache cold · new model')).toContain('cache cold · new model ⚠ your next message re-reads the entire chat at full price')
+  expect(row(80, 'cache 42m')).toBe('Subscription | Opus 5.5 | effort Medium | ctx ██████░░ 80% | cache 42m')
+})
+
 test("the next request: Control Panel's pick, else what was sent, else the session's model", () => {
   expect(nextRequest(undefined, null)).toEqual({ model: null, effort: null })
   expect(nextRequest(undefined, null, 'claude-sonnet-5-5')).toEqual({ model: 'claude-sonnet-5-5', effort: null })

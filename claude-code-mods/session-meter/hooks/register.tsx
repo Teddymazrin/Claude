@@ -17,6 +17,12 @@ const lastCall = atom({ plugin: 'session-meter', key: 'lastCall' } as const, nul
 
 // Under this many minutes left, the cache piece turns red.
 const CACHE_WARN_MINS = 5
+// From this context percentage, a cold cache gets a warning: the next message re-reads that much at full price.
+export const COLD_WARN_AT = 40
+export const COLD_WARNING = 'cold ⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh'
+
+/** True when the cache is cold and the chat is big enough that the next message costs a lot of usage. */
+export const isCostlyCold = (cache: string, context: number | null) => cache === 'cache cold' && (context ?? 0) >= COLD_WARN_AT
 
 let tick: Timer | undefined
 
@@ -117,7 +123,10 @@ export const meterPieces = (m: Meter, last: LastCall | null, now: number, nextMo
   const pieces: Piece[] = [
     { key: 'ctx', label: 'ctx', value: m.context === null ? '…' : `${m.context}%`, color: fillColor(m.context ?? 0) },
   ]
-  if (cache) pieces.push({ key: 'cache', label: 'cache', value: cache.replace(/^cache /, ''), color: cacheColor(cache, mins) })
+  if (cache) {
+    const value = isCostlyCold(cache, m.context) ? COLD_WARNING : cache.replace(/^cache /, '')
+    pieces.push({ key: 'cache', label: 'cache', value, color: cacheColor(cache, mins) })
+  }
   if (m.limit) {
     const reset = resetText(m.limit.resetsAt, now)
     pieces.push({ key: '5h', label: '5h', value: `${Math.round(m.limit.percent)}%`, color: fillColor(m.limit.percent), ...(reset ? { note: reset } : {}) })

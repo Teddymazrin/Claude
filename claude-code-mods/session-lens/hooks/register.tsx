@@ -118,6 +118,16 @@ export const cacheText = (last: LastCall | null, ttlMs: number, now: number, nex
   return mins < 1 ? 'cache <1m' : `cache ${mins}m`
 }
 
+// From this context percentage, a cold cache gets a warning: the next message re-reads that much at full price.
+export const COLD_WARN_AT = 40
+export const COLD_WARNING = '⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh'
+
+/** True when the cache is cold (or cold for a new model) and the chat is big enough that the next message costs a lot of usage. */
+export const isCostlyCold = (cache: string, context: number | null) => cache.startsWith('cache cold') && (context ?? 0) >= COLD_WARN_AT
+
+/** The cache piece, with the warning after it when a cold cache will cost a lot. */
+export const cacheWithWarning = (cache: string, context: number | null) => (isCostlyCold(cache, context) ? `${cache} ${COLD_WARNING}` : cache)
+
 /** The row as plain text: plan | model | effort | context bar | cache | 5-hour window | weekly window. */
 export const statusText = (m: Meter, model: string | null | undefined, effort: string | null | undefined, now: number, cache = '') => {
   const bar = meterBar(m.context ?? 0)
@@ -127,7 +137,7 @@ export const statusText = (m: Meter, model: string | null | undefined, effort: s
     `effort ${effort ? effortName(effort) : '…'}`,
     `ctx ${bar.filled}${bar.empty} ${m.context === null ? '…' : `${m.context}%`}`,
   ]
-  if (cache) parts.push(cache)
+  if (cache) parts.push(cacheWithWarning(cache, m.context))
   if (m.limit) parts.push(limitText('usage', m.limit, now))
   if (m.week) parts.push(limitText('weekly', m.week, now))
   return parts.join(' | ')
@@ -247,7 +257,10 @@ export const register: Register = on => {
             <Text key="ctx-empty" color={SLATE}>{bar.empty}</Text>,
             <Text key="ctx-pct" color={ctxColor}> {m.context === null ? '…' : `${ctx}%`}</Text>,
           ])}
-          {cache && piece('cache', <Text color={RED}>{cache}</Text>)}
+          {cache && piece('cache', [
+            <Text key="cache-text" color={RED}>{cache}</Text>,
+            isCostlyCold(cache, m.context) ? <Text key="cache-warn" bold color={RED}>{` ${COLD_WARNING}`}</Text> : null,
+          ])}
           {window('usage', m.limit)}
           {window('weekly', m.week)}
         </Box>

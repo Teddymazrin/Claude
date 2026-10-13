@@ -45,6 +45,17 @@ test('the footer line: context, cache, 5-hour with its reset, weekly', () => {
   expect(meterPieces({ plan: null, context: null, limit: null, week: null }, null, now).map(p => p.value)).toEqual(['…'])
 })
 
+test('a cold cache on a big chat warns that the next message uses extra usage', () => {
+  const now = Date.parse('2026-10-12T00:00:00Z')
+  const cold = { at: now - 2 * HOUR, model: 'claude-opus-5-5' }
+  const cache = (context: number) =>
+    meterPieces({ plan: 'Subscription', context, limit: null, week: null }, cold, now, 'claude-opus-5-5').find(p => p.key === 'cache')?.value
+  expect(cache(39)).toBe('cold')
+  expect(cache(40)).toBe('cold ⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh')
+  const warm = meterPieces({ plan: 'Subscription', context: 80, limit: null, week: null }, { at: now - 18 * 60_000, model: 'claude-opus-5-5' }, now)
+  expect(warm.find(p => p.key === 'cache')?.value).toBe('42m')
+})
+
 test('the line shows in the app as plain text, not in the terminal', async ($, on) => {
   on('clock.now', () => ({ value: 5_000 }))
   on('ui.render', ($, e) => {
