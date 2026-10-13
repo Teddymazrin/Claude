@@ -8,15 +8,12 @@ const GREEN = '#1f9d63'
 const GOLD = '#d9a441'
 const ORANGE = '#e06c3c'
 const RED = '#e5484d'
-const SLATE = '#2a2f3a'
 const INK = '#e8e6e3'
 const MUTED = '#7d8190'
-const BLACK = '#0c0c0e'
 
 const meter = atom({ plugin: 'session-meter', key: 'meter' } as const, { plan: null, context: null, limit: null, week: null })
 // When the main thread's last response finished, and which model gave it: the prompt cache's clock starts there.
 const lastCall = atom({ plugin: 'session-meter', key: 'lastCall' } as const, null)
-const isOpen = atom({ plugin: 'session-meter', key: 'isOpen' } as const, false)
 
 // Under this many minutes left, the cache piece turns red.
 const CACHE_WARN_MINS = 5
@@ -105,6 +102,26 @@ async function measure($: EngineInterface, context: number | undefined, limits: 
   }))
 }
 
+/** One piece of the footer line: a dim label, a colored value, and a dim note after it. */
+export type Piece = { key: string; label: string; value: string; color: string; note?: string }
+
+/** The footer line's pieces: context, cache, the 5-hour window (with its reset), the weekly window. */
+export const meterPieces = (m: Meter, last: LastCall | null, now: number, nextModel?: string): Piece[] => {
+  const ttl = cacheTtlMs(m.plan)
+  const mins = cacheMinsLeft(last, ttl, now, nextModel)
+  const cache = cacheText(mins, last, now, ttl)
+  const pieces: Piece[] = [
+    { key: 'ctx', label: 'ctx', value: m.context === null ? '…' : `${m.context}%`, color: fillColor(m.context ?? 0) },
+  ]
+  if (cache) pieces.push({ key: 'cache', label: 'cache', value: cache.replace(/^cache /, ''), color: cacheColor(cache, mins) })
+  if (m.limit) {
+    const reset = resetText(m.limit.resetsAt, now)
+    pieces.push({ key: '5h', label: '5h', value: `${Math.round(m.limit.percent)}%`, color: fillColor(m.limit.percent), ...(reset ? { note: reset } : {}) })
+  }
+  if (m.week) pieces.push({ key: 'week', label: 'week', value: `${Math.round(m.week.percent)}%`, color: fillColor(m.week.percent) })
+  return pieces
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const usage = await $.session.usage().catch(() => undefined)
@@ -131,75 +148,44 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // A chip at the left of the footer, in the app only: the terminal has Control Panel's status row.
+  // One line of colored text at the left of the footer, in the app only: the terminal has Control Panel's status row.
+  // Plain Text, no Button: the app draws a Button natively from its label alone, dropping colored children.
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const below = await next(e)
     if (e.surface === 'terminal') return below
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
 
     const m = await read($, meter)
     const now = await $.clock.now()
     const last = await read($, lastCall)
-    const ttl = cacheTtlMs(m.plan)
-    const mins = cacheMinsLeft(last, ttl, now, await $.session.model().catch(() => undefined))
-    const cache = cacheText(mins, last, now, ttl)
-    const open = await read($, isOpen)
-    const ctx = m.context ?? 0
+    const nextModel = await $.session.model().catch(() => undefined)
+    const pieces = meterPieces(m, last, now, nextModel)
 
-    const window = (key: string, label: string, l: Limit | null) => {
-      if (!l) return null
-      const reset = resetText(l.resetsAt, now)
-      return (
-        <Box key={key} flexDirection="row">
-          <Text color={MUTED}>{`${label}`.padEnd(10)}</Text>
-          <Text color={fillColor(l.percent)}>{`${Math.round(l.percent)}%`}</Text>
-          {reset ? <Text color={MUTED}>{`  resets ${reset}`}</Text> : null}
-        </Box>
-      )
-    }
-    const details = open ? (
-      <Box key="session-meter-details" flexDirection="column" backgroundColor={BLACK} paddingX={1}>
-        {window('session-meter-5h', '5-hour', m.limit)}
-        {window('session-meter-week', 'Weekly', m.week)}
-        {!m.limit && !m.week ? <Text color={MUTED}>No usage reading yet</Text> : null}
-        {last ? <Text color={MUTED}>{`Cache lasts ${ttl / 60_000}m after each reply`}</Text> : null}
-      </Box>
-    ) : null
-
-    const toggle = () => update($, isOpen, o => !o)
-    const chip = (
-      <Box key="session-meter-chip" backgroundColor={SLATE} paddingX={1}>
-        <Button key="session-meter-toggle" plain label="Session meter" hover={{ bold: true }} onPress={toggle}>
-          <Text color={MUTED}>ctx </Text>
-          <Text color={fillColor(ctx)}>{m.context === null ? '…' : `${ctx}%`}</Text>
-          {cache ? <Text color={MUTED}> · </Text> : null}
-          {cache ? <Text color={cacheColor(cache, mins)}>{cache}</Text> : null}
-          {m.limit ? <Text color={MUTED}> · usage </Text> : null}
-          {m.limit ? <Text color={fillColor(m.limit.percent)}>{`${Math.round(m.limit.percent)}%`}</Text> : null}
-        </Button>
-      </Box>
-    )
     const mine = (
-      <Box flexDirection="column" alignItems="flex-start">
-        {details}
-        {chip}
+      <Box key="session-meter" flexDirection="row" flexShrink={0}>
+        {pieces.flatMap((p, i) => [
+          i > 0 ? <Text key={`sep-${p.key}`} color={MUTED}> · </Text> : null,
+          <Text key={`label-${p.key}`} color={MUTED}>{`${p.label} `}</Text>,
+          <Text key={`value-${p.key}`} color={p.color}>{p.value}</Text>,
+          p.note ? <Text key={`note-${p.key}`} color={MUTED}>{` (${p.note})`}</Text> : null,
+        ])}
       </Box>
     )
 
     const isEngine = 'type' in below && below.type === 'engine'
-    // Another mod's chip is beneath: sit to its left, on the bottom line.
+    // Another mod's chip is beneath: sit to its left, on the same line.
     if (!isEngine)
       return (
         <Box flexDirection="row" alignItems="flex-end">
-          <Box marginRight={1}>{mine}</Box>
+          <Box marginRight={2}>{mine}</Box>
           {below}
         </Box>
       )
-    // The engine's modes are beneath: keep them above, the chip on the bottom line.
+    // The engine's modes are beneath: keep them beside it.
     return (
-      <Box flexDirection="column" alignItems="flex-end">
-        {e.props.modes.length > 0 && below}
+      <Box flexDirection="row" alignItems="flex-end">
         {mine}
+        {e.props.modes.length > 0 ? <Box marginLeft={2}>{below}</Box> : null}
       </Box>
     )
   }).catch(($, e, next) => next(e))

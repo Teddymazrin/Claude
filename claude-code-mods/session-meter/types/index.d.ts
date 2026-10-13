@@ -8,7 +8,6 @@ declare module 'claude-code' {
     'session-meter': {
       meter: Meter
       lastCall: LastCall | null
-      isOpen: boolean
     }
   }
 }
