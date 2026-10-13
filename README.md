@@ -6,7 +6,7 @@ Add-ons for Claude by Teddymazrin.
 
 | Folder | What it is |
 | --- | --- |
-| [claude-code-mods](claude-code-mods/README.md) | Mods for Claude Code: panes, status rows and safety checks that run inside your sessions. They work in the terminal and in the desktop app's Code tab |
+| [claude-code-mods](claude-code-mods/README.md) | Nine mods for Claude Code: panes, status lines, handoff reminders and safety checks that run inside your sessions. Most work in both the terminal and the desktop app's Code tab; for the session meter, use **Session Lens** in the terminal and **Session Meter** in the desktop app |
 | [claude-code-skills](claude-code-skills/) | Skills for Claude. Coming soon |
 
 ## Install

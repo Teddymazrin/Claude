@@ -1,16 +1,18 @@
 # Claude Code mods
 
-Seven mods for Claude Code. They work in the terminal and in the desktop app's Code tab.
+Nine mods for Claude Code. Most work both in the terminal and in the desktop app's Code tab; the two session meters are each made for one of them (see [Session Lens or Session Meter?](#session-lens-or-session-meter)).
 
-| Mod | Latest | What it does |
-| --- | --- | --- |
-| [Bare View](#bare-view) | 1.13.1 | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
-| [Control Panel](#control-panel) | 1.11.1 | A status row (plan, model, effort, context, cache countdown, 5-hour and weekly limits) and a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Action Items](#action-items) | 6.2.0 | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
-| [Guard Rails](#guard-rails) | 1.0.0 | Asks before risky commands and edits, and logs what it stopped |
-| [Context Handoff](#context-handoff) | 1.3.0 | Warns as the context window fills, and writes a handoff note you copy into a fresh session |
-| [Tenant Lens](#tenant-lens) | 1.1.0 | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
-| [Context Lens](#context-lens) | 1.1.0 | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
+| Mod | Latest | Works in | What it does |
+| --- | --- | --- | --- |
+| [Bare View](#bare-view) | 1.15.1 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
+| [Control Panel](#control-panel) | 1.12.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
+| [Session Lens](#session-lens) | 1.0.0 | **Terminal** | A full status row under the prompt: plan, model, effort, context bar, cache countdown, 5-hour and weekly limits |
+| [Session Meter](#session-meter) | 0.3.1 | **Desktop app** | A short line in the app's footer: context, cache countdown and 5-hour usage |
+| [Action Items](#action-items) | 6.4.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
+| [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
+| [Context Handoff](#context-handoff) | 1.4.0 | Both | Boxes at 50%, 65% and 80% full that explain why to start fresh, a handoff note written for you, and one click to clear the chat and continue from it |
+| [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
+| [Context Lens](#context-lens) | 1.2.0 | Both | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
 
 `claude plugin list` shows the version you have installed; if it's behind **Latest**, see [Updating the mods](#updating-the-mods).
 
@@ -27,6 +29,8 @@ Then install the mods you want, one line each (press Enter for the user scope):
 ```
 /plugin install bare-view@teddymazrin-mods
 /plugin install control-panel@teddymazrin-mods
+/plugin install session-lens@teddymazrin-mods
+/plugin install session-meter@teddymazrin-mods
 /plugin install action-items@teddymazrin-mods
 /plugin install guard-rails@teddymazrin-mods
 /plugin install context-handoff@teddymazrin-mods
@@ -34,13 +38,15 @@ Then install the mods you want, one line each (press Enter for the user scope):
 /plugin install tenant-lens@teddymazrin-mods
 ```
 
-Run `/reload-plugins` to load them, or start a new session.
+Run `/reload-plugins` to load them, or start a new session. Pick **session-lens** if you use Claude Code in a terminal and **session-meter** if you use the desktop app; you don't need both.
 
 ## Bare View
 
 A live task checklist above the prompt: the goal, a progress bar, each step and a timer. Tool calls and in-progress text are hidden, so only the checklist and the final answers show; every earlier answer stays in the transcript when you scroll back. Every final answer has the same short shape: a **Summary** of 1-3 sentences, a **Why** when the reason isn't obvious, **Worth knowing** (up to 3 bullets, only if any), and any decisions or actions (including how-to steps and commands) in the Action Items box. Prose stays under about 80 words unless you asked for an explanation. A plain question gets a direct answer with no labels. The shape is repeated in the result of the call that finishes the checklist, right before Claude writes the answer, so long turns stick to it too. Also, the checklist moves one step at a time: Claude ticks off each step as it finishes it with a short `{"advance": true}` call, and resends the whole list only when the plan changes or a step fails.
 
 - **Activity:** while Claude is working, a row under the progress bar says what it's doing right now, with a timer: `◐ Thinking 6s`, `Writing`, `Waiting for the model`, `Starting Edit`, or `Running Bash` (the tool only, not the command), plus `· 2 agents working` when subagents are busy. It shows on every turn, including slash commands, turns Claude starts by itself (goal `Continuing`), and turns with no task list. While a permission dialog is open it reads `⏸ Waiting for you to approve Bash` in orange (it stays on that until the approved tool finishes)
+- **No empty bar:** the goal and progress bar show only for a turn with a checklist. A turn without one (a quick question, a slash command) shows just the activity row, and the band goes away when that turn ends, instead of sitting at `No plan yet · 0%`
+- **Short windows:** as the window gets shorter, both boxes above the prompt stay in view. While Claude works, the checklist fits the rows left after Action Items' one-line box: steps that don't fit fold into `✓ … N done` above and `○ N more` below the working step
 - **Folds when finished:** once every step is done, the band shrinks to one line, `✓ All 4 done · 2m 13s · 14 tool calls · 1 error ▸`. Click it to see the full checklist, and click `▾ All 4 done` to fold it again
 - **Errors vs failures:** a tool call that errors (a missing file, a search with no match, a check Claude re-runs) is only counted, dim: `· 1 error`. A step only shows a pink `✗` and reads **Failed** when Claude marks it failed because its result really didn't happen, such as a rejected push or tests that still fail; the folded line then reads `✗ 3 done · 1 step failed · …`, with each failed step and why under it (`✗ Push to main: GitHub rejected the push`), and opened out the reason sits under the step. Whenever a call errored, Claude's final answer says in one line whether it affected the result
 - **Tally:** a line counts the tool calls behind each prompt, split into built-in and MCP: `⚙ 4 tool calls · ▸ Built-in: 3 · ▸ MCP: 1`. Click a group to list the tools it ran under the line (`› Bash 2`, `› microsoft-learn › microsoft_docs_search 1`), and click again to fold it back up
@@ -49,7 +55,34 @@ A live task checklist above the prompt: the goal, a progress bar, each step and 
 
 ## Control Panel
 
-Shows as **◆ Control Panel** in the footer, with a status row under the prompt:
+Shows as **◆ Control Panel** in the footer. The status row it used to draw under the prompt is now its own mod, [Session Lens](#session-lens).
+
+Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
+
+- **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`)
+- **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
+- **Settings:** switch **Bare View** and **Guard Rails** on or off. The switch is saved straight away, and one `/reload-plugins` runs 1.5 seconds after your last click, so flipping both quickly applies them at once. The other mods have no switch and always stay on
+- **Actions:** one row each, at the bottom of the panel:
+  - **Context Lens ▸ Open:** closes the panel and opens Context Lens in front. Shows only while Context Lens is installed and on
+  - **Reload plugins ▸ Run:** runs `/reload-plugins`
+  - **Clear chat ▸ Run:** runs `/clear` after asking you to confirm
+
+## Session Lens or Session Meter?
+
+Both show how full your context is, how long the prompt cache stays warm, and how much of your plan you've used. They're built for different places:
+
+| | Session Lens | Session Meter |
+| --- | --- | --- |
+| **Use it in** | **The terminal** (`claude` in PowerShell, bash, etc.) | **The Claude desktop app** (Code tab) |
+| **Where it shows** | A full row under the prompt | A short line in the app's footer, bottom right |
+| **What it shows** | Plan, model, effort, context bar, cache, 5-hour and weekly limits with reset times | Context, cache and 5-hour usage |
+| **Why** | The terminal has room for a whole row under the prompt | The desktop app doesn't draw a mod's row under the prompt, so the footer is the one place a line fits |
+
+Install the one that matches where you work. Installing both does no harm: Session Lens's row simply doesn't appear in the desktop app.
+
+## Session Lens
+
+**For the terminal.** A status row under the prompt:
 
 ```
 Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | cache 42m | usage 6% · resets 4h12m | weekly 31% · resets Fri
@@ -64,15 +97,21 @@ Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | cach
 - **Weekly** (`weekly 31% · resets Fri`): the same for the 7-day limit. The reset shows as a weekday, or as a countdown once it's under a day away
 - Both show on a subscription once Claude Code reports them. Each percentage turns gold at 50% and orange at 75%
 
-Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
+The model and effort come from your pick in [Control Panel](#control-panel) when it's installed.
 
-- **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`)
-- **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
-- **Settings:** switch **Bare View** and **Guard Rails** on or off. The switch is saved straight away, and one `/reload-plugins` runs 1.5 seconds after your last click, so flipping both quickly applies them at once. The other mods have no switch and always stay on
-- **Actions:** one row each, at the bottom of the panel:
-  - **Context Lens ▸ Open:** closes the panel and opens Context Lens in front. Shows only while Context Lens is installed and on
-  - **Reload plugins ▸ Run:** runs `/reload-plugins`
-  - **Clear chat ▸ Run:** runs `/clear` after asking you to confirm
+## Session Meter
+
+**For the desktop app.** One short line in the footer, bottom right, beside the app's own buttons (and left of **◆ Control Panel** and **Azure Context** when those are installed):
+
+```
+ctx 23% · cache 42m · 5h 6%
+```
+
+- **ctx:** how full the conversation's context window is
+- **cache:** time until the prompt cache goes cold, as in Session Lens. After you switch models it reads `cache cold`, since the new model has no cache yet
+- **5h:** how much of your plan's 5-hour usage limit you've used
+- **Colors:** each number turns gold and then orange as it climbs; the cache turns red in its last minutes
+- **Stays current:** redraws right after `/model` and every 10 seconds, so the countdown moves while you're idle
 
 ## Action Items
 
@@ -129,14 +168,21 @@ Commands are checked in both Bash and PowerShell. A blocked call tells Claude no
 
 ## Context Handoff
 
-Keeps a long session from losing its thread when the context window fills.
+Keeps a long session from getting slow, costly and forgetful. As a chat grows, every message uses more of your usage and Claude starts missing details; Context Handoff tells you when, in plain words, and moves you to a fresh chat without losing your place.
 
-- **Warnings:** a toast at 70% context full, and a more urgent one at 85%. Each shows once, and again after `/clear` or a compact brings the context back down
-- **`/handoff`:** Claude writes a handoff note for this session: the goal, what's done, what's in progress, next steps, key files, and decisions and gotchas. It goes straight to the Handoff pane; no file is written
-- **The Handoff pane:** opens on the right with the note and one button, **⧉ Copy prompt**. It copies the whole note with a line asking Claude to sum up where things stand and wait for you to confirm the next step. In a narrow window a box above the prompt shows **⧉ Copy prompt** instead, plus **▸ Open** for the full note
-- **`/handoff open`:** shows this session's note again without writing a new one. Notes are never saved: copy it before `/clear`, because a new session starts with none
+- **Reminders at 50%, 65% and 80% full:** a violet box above the prompt, more urgent each time. It stays until you click **✎ Write handoff** or **Not now** (or ✕):
+  - **50%:** *This chat is 50% full · Long chats use up more of your usage and Claude gets less sharp. Start fresh with a summary?*
+  - **65%:** *This chat is 65% full · Every message now costs more usage, and Claude may start missing details. Start fresh at your next break.*
+  - **80%:** *This chat is 80% full · Almost full: soon Claude shrinks the chat and forgets details, and each message costs the most usage. Start fresh now.*
 
-The usual flow is `/handoff`, then **⧉ Copy prompt**, then `/clear` (or **Clear** in Control Panel), then paste.
+  Each shows once per chat, and again only after the chat shrinks below it (after a clear or a compact) and grows back. `/handoff ask 50`, `ask 65` or `ask 80` previews one
+- **`/handoff`** (or **✎ Write handoff**): Claude writes a handoff note for this session: the goal, what's done, what's in progress, next steps, key files, and decisions and gotchas. It opens in the Handoff pane; no file is written
+- **Two ways on**, in the pane (or in a box above the prompt when the window is narrow):
+  - **↻ Clear this chat & continue with note:** asks once, then clears this chat and sends the note as the fresh chat's first message. Claude sums up where things stand and waits for you to confirm the next step
+  - **⧉ Copy & continue in a new chat:** copies the note with that same request, to paste into a new chat; this chat stays as it is
+- **`/handoff open`:** shows this session's note again without writing a new one. It's the note as it was written, so after more work run `/handoff` again for an up-to-date one. Notes are never saved: a new chat starts with none
+
+The usual flow: when a box appears, click **✎ Write handoff**, then **↻ Clear this chat & continue with note**.
 
 ## Tenant Lens
 
@@ -213,6 +259,8 @@ Run these in a regular terminal (PowerShell, bash). Don't run them at the Claude
 claude plugin marketplace update teddymazrin-mods
 claude plugin update bare-view@teddymazrin-mods
 claude plugin update control-panel@teddymazrin-mods
+claude plugin update session-lens@teddymazrin-mods
+claude plugin update session-meter@teddymazrin-mods
 claude plugin update action-items@teddymazrin-mods
 claude plugin update guard-rails@teddymazrin-mods
 claude plugin update context-handoff@teddymazrin-mods
