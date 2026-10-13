@@ -1,5 +1,11 @@
 # Bare View log
 
+## 1.15.1 (2026-10-12)
+
+**Found in use:** a turn without a checklist left the band sitting at "No plan yet · 0%".
+
+**Changed:** the progress bar shows only for a turn with a checklist. Work without one shows just its activity row, and the band goes once the turn ends.
+
 ## 1.15.0 (2026-10-10)
 
 **Asked for:** as the terminal window is made smaller, both boxes above the prompt should stay in view instead of one scrolling away. Picked: the box that matters now stays whole, the other shrinks to one line.
