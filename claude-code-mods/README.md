@@ -5,7 +5,7 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | Mod | Latest | Works in | What it does |
 | --- | --- | --- | --- |
 | [Bare View](#bare-view) | 1.15.1 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
-| [Control Panel](#control-panel) | 1.13.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
+| [Control Panel](#control-panel) | 1.13.1 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Session Manager](#session-manager) | 1.0.2 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
 | [Action Items](#action-items) | 6.4.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
@@ -55,7 +55,7 @@ Shows as **◆ Control Panel** in the footer. The status row it used to draw und
 
 Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
-- **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`). The pick goes in the prompt box as `/model <name>`; press Enter to switch. It's the same as typing `/model` yourself, so the app's own model menu changes too (a mod can't send it for you)
+- **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`). It's the same as typing `/model <name>` yourself, so the model really changes everywhere. In the terminal it switches straight away. In the desktop app the pick goes in the prompt box; press Enter to switch, so the app's own model menu changes too (a mod can't send it for you there)
 - **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
 - **Settings:** switch **Bare View** and **Guard Rails** on or off. The switch is saved straight away, and one `/reload-plugins` runs 1.5 seconds after your last click, so flipping both quickly applies them at once. The other mods have no switch and always stay on
 - **Actions:** one row each, at the bottom of the panel:
