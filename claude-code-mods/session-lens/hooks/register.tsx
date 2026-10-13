@@ -143,9 +143,13 @@ export const statusText = (m: Meter, model: string | null | undefined, effort: s
   return parts.join(' | ')
 }
 
-/** What the next request goes out with: Control Panel's pick where set, else what was last sent, else the session's model. */
+/**
+ * What the next request goes out with: Control Panel's pick where set, else the session's model (which `/model`
+ * changes straight away), else what was last sent. The last-sent model only changes on the next request, so
+ * putting it first hid a `/model` switch, and with it the cold cache it causes.
+ */
 export const nextRequest = (pick: Pick | undefined, s: Seen | null, sessionModel?: string) => ({
-  model: pick?.model ?? s?.model ?? sessionModel ?? null,
+  model: pick?.model ?? sessionModel ?? s?.model ?? null,
   effort: pick?.effort ?? s?.effort ?? null,
 })
 

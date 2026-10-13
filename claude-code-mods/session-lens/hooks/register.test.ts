@@ -72,10 +72,12 @@ test('a cold cache on a big chat warns that the next message uses extra usage', 
   expect(row(80, 'cache 42m')).toBe('Subscription | Opus 5.5 | effort Medium | ctx ██████░░ 80% | cache 42m')
 })
 
-test("the next request: Control Panel's pick, else what was sent, else the session's model", () => {
+test("the next request: Control Panel's pick, else the session's model (/model), else what was sent", () => {
   expect(nextRequest(undefined, null)).toEqual({ model: null, effort: null })
   expect(nextRequest(undefined, null, 'claude-sonnet-5-5')).toEqual({ model: 'claude-sonnet-5-5', effort: null })
-  expect(nextRequest(undefined, { model: 'claude-opus-5-5', effort: 'high' }, 'claude-sonnet-5-5')).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+  expect(nextRequest(undefined, { model: 'claude-opus-5-5', effort: 'high' })).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+  // After /model the session's model is already the new one; what was sent is still the old one.
+  expect(nextRequest(undefined, { model: 'claude-opus-5-5', effort: 'high' }, 'claude-sonnet-5-5')).toEqual({ model: 'claude-sonnet-5-5', effort: 'high' })
   expect(nextRequest({ model: 'claude-fable-5-1', effort: null }, { model: 'claude-opus-5-5', effort: 'high' })).toEqual({ model: 'claude-fable-5-1', effort: 'high' })
   expect(modelName('claude-haiku-5-5')).toBe('Haiku 5.5')
 })
