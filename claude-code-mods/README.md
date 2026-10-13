@@ -115,13 +115,13 @@ ctx 23% · cache 42m · 5h 6%
 
 ## Cold-cache warning
 
-Both Session Lens and Session Meter warn you when coming back to a big chat will cost a lot. When the prompt cache has gone cold (or you've switched models) and the chat is 40% full or more, the cache piece reads, in red:
+Both Session Lens and Session Meter warn you when your next message will cost more. Whenever the prompt cache has gone cold (or you've switched models), whatever the chat's size, the cache piece reads, in red:
 
 ```
 cache cold ⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh
 ```
 
-That's the moment a handoff saves the most: run `/handoff`, then **↻ Clear this chat & continue with note**, and the fresh chat starts small. Below 40% it just says `cache cold`.
+That's the moment a handoff saves the most: run `/handoff`, then **↻ Clear this chat & continue with note**, and the fresh chat starts small. The bigger the chat, the more that re-read costs.
 
 ## Action Items
 

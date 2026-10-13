@@ -17,8 +17,9 @@ const lastCall = atom({ plugin: 'session-meter', key: 'lastCall' } as const, nul
 
 // Under this many minutes left, the cache piece turns red.
 const CACHE_WARN_MINS = 5
-// From this context percentage, a cold cache gets a warning: the next message re-reads that much at full price.
-export const COLD_WARN_AT = 40
+// From this context percentage, a cold cache gets a warning: the next message re-reads the chat at full price.
+// 0: warn whenever the cache is cold, however small the chat.
+export const COLD_WARN_AT = 0
 export const COLD_WARNING = 'cold ⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh'
 
 /** True when the cache is cold and the chat is big enough that the next message costs a lot of usage. */

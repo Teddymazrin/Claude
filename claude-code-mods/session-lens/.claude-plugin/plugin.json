@@ -1,6 +1,6 @@
 {
   "name": "session-lens",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Session Lens. A status row under the prompt in the terminal: plan, model, effort, context, prompt cache, and the 5-hour and weekly usage windows",
   "author": {
     "name": "Teddymazrin"
