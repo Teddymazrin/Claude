@@ -44,11 +44,15 @@ export const cacheMinsLeft = (last: LastCall | null, ttlMs: number, now: number,
 }
 
 /** `cache 42m`, `cache <1m`, `cache cold`; '' before the first response. */
-export const cacheText = (mins: number | null, last: LastCall | null, now: number, ttlMs: number) => {
+export const cacheText = (mins: number | null, last: LastCall | null, now: number, ttlMs: number, isSwitched = false) => {
   if (mins === null) return ''
   if (mins > 0) return `cache ${mins}m`
-  return last && last.at + ttlMs > now ? 'cache <1m' : 'cache cold'
+  return !isSwitched && last && last.at + ttlMs > now ? 'cache <1m' : 'cache cold'
 }
+
+/** True when the next request goes to another model than the last response came from: that model's cache is cold. */
+export const isModelSwitched = (last: LastCall | null, nextModel?: string) =>
+  Boolean(last?.model && nextModel && baseModel(last.model) !== baseModel(nextModel))
 
 export const cacheColor = (text: string, mins: number | null) =>
   text === 'cache cold' || text === 'cache <1m' || (mins !== null && mins < CACHE_WARN_MINS) ? RED : mins !== null && mins < 15 ? GOLD : INK
@@ -109,7 +113,7 @@ export type Piece = { key: string; label: string; value: string; color: string; 
 export const meterPieces = (m: Meter, last: LastCall | null, now: number, nextModel?: string): Piece[] => {
   const ttl = cacheTtlMs(m.plan)
   const mins = cacheMinsLeft(last, ttl, now, nextModel)
-  const cache = cacheText(mins, last, now, ttl)
+  const cache = cacheText(mins, last, now, ttl, isModelSwitched(last, nextModel))
   const pieces: Piece[] = [
     { key: 'ctx', label: 'ctx', value: m.context === null ? '…' : `${m.context}%`, color: fillColor(m.context ?? 0) },
   ]
@@ -126,9 +130,9 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const usage = await $.session.usage().catch(() => undefined)
     await measure($, usage?.context.percent, usage?.rateLimits ?? []).catch(() => {})
-    // Redraw once a minute so the cache countdown moves while the session is idle.
+    // Redraw every 10 seconds so the cache countdown and a model switch show while the session is idle.
     tick?.cancel()
-    tick = $.clock.every(60_000, () => {
+    tick = $.clock.every(10_000, () => {
       $.ui.invalidate('ui.render')
     })
     return next(e)
@@ -137,6 +141,13 @@ export const register: Register = on => {
   on('session.measure', async ($, e, next) => {
     await measure($, e.context.percent, e.rateLimits)
     return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // A model switch changes which cache is warm: redraw now rather than at the next minute's tick.
+  on('command.run', { command: 'model' }, async ($, e, next) => {
+    const result = await next(e)
+    $.ui.invalidate('ui.render')
+    return result
   }).catch(($, e, next) => next(e))
 
   // The main thread's response just landed: the cache was read or written now.
@@ -148,10 +159,9 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // One line of colored text in the hint line under the prompt, beside the app's mode picker, in the app only:
-  // the terminal has Control Panel's status row there. Plain Text, no Button: the app draws a Button natively
-  // from its label alone, dropping colored children.
-  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+  // One line of colored text at the left of the footer, in the app only: the terminal has Control Panel's status row.
+  // Plain Text, no Button: the app draws a Button natively from its label alone, dropping colored children.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const below = await next(e)
     if (e.surface === 'terminal') return below
     const { Box, Text } = $.ui.resolve(e)
@@ -160,19 +170,33 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const last = await read($, lastCall)
     const nextModel = await $.session.model().catch(() => undefined)
-    const pieces = meterPieces(m, last, now, nextModel)
+    const pieces = meterPieces(m, last, now, nextModel).filter(p => p.key !== 'week')
 
-    return (
-      <Box flexDirection="row">
-        <Box key="session-meter" flexDirection="row" flexShrink={0}>
-          {pieces.flatMap((p, i) => [
-            i > 0 ? <Text key={`sep-${p.key}`} color={MUTED}> · </Text> : null,
-            <Text key={`label-${p.key}`} color={MUTED}>{`${p.label} `}</Text>,
-            <Text key={`value-${p.key}`} color={p.color}>{p.value}</Text>,
-            p.note ? <Text key={`note-${p.key}`} color={MUTED}>{` (${p.note})`}</Text> : null,
-          ])}
+    const mine = (
+      <Box key="session-meter" flexDirection="row" flexShrink={0}>
+        {pieces.flatMap((p, i) => [
+          i > 0 ? <Text key={`sep-${p.key}`} color={MUTED}> · </Text> : null,
+          <Text key={`label-${p.key}`} color={MUTED}>{`${p.label} `}</Text>,
+          <Text key={`value-${p.key}`} color={p.color}>{p.value}</Text>,
+          null,
+        ])}
+      </Box>
+    )
+
+    const isEngine = 'type' in below && below.type === 'engine'
+    // Another mod's chip is beneath: sit to its left, on the same line.
+    if (!isEngine)
+      return (
+        <Box flexDirection="row" alignItems="flex-end">
+          <Box marginRight={2}>{mine}</Box>
+          {below}
         </Box>
-        {e.props.hint ? <Box marginLeft={2}>{below}</Box> : null}
+      )
+    // The engine's modes are beneath: keep them beside it.
+    return (
+      <Box flexDirection="row" alignItems="flex-end">
+        {mine}
+        {e.props.modes.length > 0 ? <Box marginLeft={2}>{below}</Box> : null}
       </Box>
     )
   }).catch(($, e, next) => next(e))

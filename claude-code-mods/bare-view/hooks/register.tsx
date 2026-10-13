@@ -653,6 +653,8 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const { done, total, percent, failed: failedSteps } = progress(list)
     const isFinished = total > 0 && done === total
+    // No checklist this turn: once the turn ends there is nothing to show, so the band goes.
+    if (total === 0 && !e.props.isWorking) return below
     const timer = list.startedAt === undefined ? '' : elapsed((list.finishedAt ?? now) - list.startedAt)
     const tickNo = Math.floor(now / 1000)
 
@@ -782,6 +784,8 @@ export const register: Register = on => {
             <Text dimColor>{timer}</Text>
           </Box>
 
+          {/* The progress bar only for a turn with a checklist; work without one shows just its activity. */}
+          {total > 0 ? (
           <Box flexDirection="row">
             {isFinished ? (
               // Opened out, the finished label folds it back to one line.
@@ -801,6 +805,7 @@ export const register: Register = on => {
               {pctText}
             </Text>
           </Box>
+          ) : null}
 
           {activityRow}
 

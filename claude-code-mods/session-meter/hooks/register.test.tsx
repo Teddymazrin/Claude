@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { baseModel, cacheMinsLeft, cacheText, meterPieces, pickLimit, pickWeek, resetText } from './register'
 
 const HOUR = 60 * 60_000
-const FOOTER = { component: 'PromptHint', viewport: { columns: 100, rows: 40 }, props: { isDraft: false, isWorking: false, hint: '' } } as const
+const FOOTER = { component: 'SessionMode', viewport: { columns: 100, rows: 40 }, props: { modes: [] } } as const
 
 test('the cache counts down from the last reply and goes cold on a new model', () => {
   const last = { at: 0, model: 'claude-opus-5-5' }
@@ -13,6 +13,8 @@ test('the cache counts down from the last reply and goes cold on a new model', (
   expect(cacheText(42, last, 18 * 60_000, HOUR)).toBe('cache 42m')
   expect(cacheText(0, last, HOUR - 30_000, HOUR)).toBe('cache <1m')
   expect(cacheText(0, last, 2 * HOUR, HOUR)).toBe('cache cold')
+  // A switch to another model inside the hour is cold too, not '<1m'.
+  expect(cacheText(0, last, 0, HOUR, true)).toBe('cache cold')
   expect(baseModel('claude-opus-5-5-20260101')).toBe('claude-opus-5-5')
 })
 
