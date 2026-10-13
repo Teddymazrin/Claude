@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer, TimerCall } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren, Timer, TimerCall } from 'claude-code'
 
-import type { Choice, Effort, LastCall, Limit, Meter, Mod, Plan, Seen } from '../types'
+import type { Choice, Effort, Mod, Seen } from '../types'
 
 const SELF = 'control-panel'
 const PANE = 'control-panel'
@@ -22,7 +22,6 @@ const ORANGE = '#e06c3c'
 const MAUVE = '#a8729a'
 const GREEN = '#1f9d63'
 const SLATE = '#2a2f3a'
-const RED = '#e5484d'
 // The pane's dark look: near-black ground, light ink, grey for the quiet parts.
 const BLACK = '#0c0c0e'
 const INK = '#e8e6e3'
@@ -33,9 +32,6 @@ const disabled = atom({ plugin: 'control-panel', key: 'disabled' } as const, [])
 const booted = atom({ plugin: 'control-panel', key: 'booted' } as const, false)
 const choice = atom({ plugin: 'control-panel', key: 'choice' } as const, { model: null, effort: null })
 const seen = atom({ plugin: 'control-panel', key: 'seen' } as const, null)
-const meter = atom({ plugin: 'control-panel', key: 'meter' } as const, { plan: null, context: null, limit: null, week: null })
-// When the main thread's last response finished, and which model gave it: the prompt cache's clock starts there.
-const lastCall = atom({ plugin: 'control-panel', key: 'lastCall' } as const, null)
 
 export const MODELS: ReadonlyArray<{ id: string; label: string; short: string; hotkey: string }> = [
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', short: 'Haiku 4.5', hotkey: '1' },
@@ -83,114 +79,6 @@ export const currentText = (c: Choice, s: Seen | null) => {
 }
 
 export const chipText = () => `◆ ${TITLE}`
-
-// The status row's pieces: a bar of `width` cells and the time left to a reset.
-export const meterBar = (percent: number, width = 8) => {
-  const filled = Math.min(width, Math.max(0, Math.round((percent / 100) * width)))
-  return { filled: '█'.repeat(filled), empty: '░'.repeat(width - filled) }
-}
-
-export const untilReset = (resetsAt: string | undefined, now: number) => {
-  const at = resetsAt ? Date.parse(resetsAt) : NaN
-  if (Number.isNaN(at)) return ''
-  const mins = Math.max(0, Math.ceil((at - now) / 60000))
-  const d = Math.floor(mins / 1440)
-  const h = Math.floor((mins % 1440) / 60)
-  const m = mins % 60
-  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`
-}
-
-const toLimit = (limit: SessionRateLimit | undefined): Limit | null =>
-  limit ? { percent: limit.percentUsed, ...(limit.resetsAt ? { resetsAt: limit.resetsAt } : {}) } : null
-
-/** The short window: the five-hour one, else any other that isn't the week. */
-export const pickLimit = (limits: readonly SessionRateLimit[]) =>
-  toLimit(limits.find(l => l.kind === 'five_hour') ?? limits.find(l => l.kind !== 'seven_day'))
-
-/** The weekly window. */
-export const pickWeek = (limits: readonly SessionRateLimit[]) => toLimit(limits.find(l => l.kind === 'seven_day'))
-
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-/** When a window resets, short: a countdown under a day away (4h12m), else the weekday (Fri). */
-export const resetText = (resetsAt: string | undefined, now: number) => {
-  const at = resetsAt ? Date.parse(resetsAt) : NaN
-  if (Number.isNaN(at)) return ''
-  return at - now < 86_400_000 ? untilReset(resetsAt, now).replace(/ 0m$/, '').replace(/ /g, '') : DAYS[new Date(at).getDay()]!
-}
-
-/** A window's piece of the row: `usage 6% · resets 4h12m`. */
-export const limitText = (label: string, l: Limit, now: number) => {
-  const reset = resetText(l.resetsAt, now)
-  return `${label} ${Math.round(l.percent)}%${reset ? ` · resets ${reset}` : ''}`
-}
-
-/** Plain under half, gold to 75%, orange above. */
-const limitColor = (percent: number) => (percent >= 75 ? ORANGE : percent >= 50 ? GOLD : undefined)
-
-/** A key in the environment or in ~/.claude.json means API billing; else a subscription login. */
-async function detectPlan($: EngineInterface, limits: readonly SessionRateLimit[]): Promise<Plan> {
-  if (limits.length > 0) return 'Subscription'
-  const keys = await Promise.all([
-    $.env.get('ANTHROPIC_API_KEY'),
-    $.env.get('ANTHROPIC_AUTH_TOKEN'),
-    $.env.get('CLAUDE_CODE_USE_BEDROCK'),
-    $.env.get('CLAUDE_CODE_USE_VERTEX'),
-  ])
-  if (keys.some(Boolean)) return 'API'
-  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
-  const config = home ? await $.fs.read(`${home}/.claude.json`).catch(() => '') : ''
-  return /"primaryApiKey"\s*:\s*"[^"]/.test(config) ? 'API' : 'Subscription'
-}
-
-/**
- * How long the prompt cache stays warm after a request. Claude Code doesn't
- * tell a mod, so this is the usual lifetime: an hour on a subscription, five
- * minutes on an API key.
- */
-export const cacheTtlMs = (plan: Plan | null) => (plan === 'API' ? 5 : 60) * 60_000
-
-/** One model however it's spelled: `claude-opus-5-5[1m]` and `claude-opus-5-5-20260101` both read `claude-opus-5-5`. */
-export const baseModel = (id: string) => id.replace(/\[[^\]]*\]$/, '').replace(/-\d{8}$/, '').toLowerCase()
-
-/**
- * Time left before the cache goes cold: `cache 42m`, `cache <1m`, `cache cold`;
- * '' before the first response. Each model has its own cache, so when the next
- * request goes to a different model than the last reply came from, it's cold.
- * A bare number is what an earlier version stored, with no model.
- */
-export const cacheText = (last: LastCall | number | null, ttlMs: number, now: number, nextModel?: string) => {
-  if (last === null) return ''
-  const call = typeof last === 'number' ? { at: last, model: '' } : last
-  if (call.model && nextModel && baseModel(call.model) !== baseModel(nextModel)) return 'cache cold · new model'
-  const left = call.at + ttlMs - now
-  if (left <= 0) return 'cache cold'
-  const mins = Math.floor(left / 60_000)
-  return mins < 1 ? 'cache <1m' : `cache ${mins}m`
-}
-
-/** The footer line: plan | model | effort | context bar | 5-hour window | weekly window. */
-export const statusText = (m: Meter, model: string | null | undefined, effort: string | null | undefined, now: number, cache = '') => {
-  const bar = meterBar(m.context ?? 0)
-  const parts = [
-    m.plan ?? '…',
-    model ? modelName(model) : '…',
-    `effort ${effort ? effortName(effort) : '…'}`,
-    `ctx ${bar.filled}${bar.empty} ${m.context === null ? '…' : `${m.context}%`}`,
-  ]
-  if (cache) parts.push(cache)
-  if (m.limit) parts.push(limitText('usage', m.limit, now))
-  if (m.week) parts.push(limitText('weekly', m.week, now))
-  return parts.join(' | ')
-}
-
-async function measure($: EngineInterface, context: number | undefined, limits: readonly SessionRateLimit[]) {
-  const before = await read($, meter)
-  const plan = before.plan === 'Subscription' || (before.plan && limits.length === 0) ? before.plan : await detectPlan($, limits)
-  const limit = pickLimit(limits) ?? before.limit
-  const week = pickWeek(limits) ?? before.week
-  await update($, meter, () => ({ plan, context: context ?? before.context, limit, week }))
-}
 
 /** The request as it should be sent: the override where one is set, the engine's otherwise. */
 export const applyChoice = <T extends { model: string; effort?: unknown }>(e: T, c: Choice): T => ({
@@ -369,8 +257,6 @@ export const debouncer = (ms: number) => {
 
 const scheduleReload = debouncer(RELOAD_DELAY_MS)
 
-let cacheTick: Timer | undefined
-
 // One switch at a time, so quick presses read and write the list and settings.json in order.
 let switching: Promise<void> = Promise.resolve()
 
@@ -461,15 +347,8 @@ export const register: Register = on => {
     const saved = (await $.store.get('choice')) as Choice | undefined
     await update($, disabled, () => off)
     await rescan($)
-    const usage = await $.session.usage().catch(() => undefined)
-    await measure($, usage?.context.percent, usage?.rateLimits ?? []).catch(() => {})
     // Clear the footer line an earlier version pinned above auto mode.
     $.ui.status(undefined)
-    // Redraw once a minute so the cache countdown moves while the session is idle.
-    cacheTick?.cancel()
-    cacheTick = $.clock.every(60_000, () => {
-      $.ui.invalidate('ui.render')
-    })
 
     // Once per session: restore the saved model pick, and reload switched-off mods
     // that loaded before Control Panel and so slipped past plugin.register.
@@ -495,81 +374,6 @@ export const register: Register = on => {
     const last = await read($, seen)
     if (last?.model !== now.model || last?.effort !== now.effort) await update($, seen, () => now)
     return yield* next(sent)
-  })
-
-  // The main thread's response just landed: the cache was read or written now.
-  on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined && e.usage) {
-      const call = { at: await $.clock.now(), model: e.usage.model }
-      await update($, lastCall, () => call)
-    }
-    return next(e)
-  }).catch(($, e, next) => next(e))
-
-  on('session.measure', async ($, e, next) => {
-    await measure($, e.context.percent, e.rateLimits)
-    return next(e)
-  }).catch(($, e, next) => next(e))
-
-  // The status row on the left, in the hint line's place, above the engine's hint.
-  // Terminal only: in the app this line is Session Meter's.
-  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
-    const below = await next(e)
-    if (e.surface !== 'terminal') return below
-    const { Box, Text } = $.ui.resolve(e)
-
-    const m = await read($, meter)
-    const c = await read($, choice)
-    const s = await read($, seen)
-    const model = c.model ?? s?.model
-    const effort = c.effort ?? s?.effort
-    const now = await $.clock.now()
-    // One piece of the row, kept whole: a narrow terminal wraps the row between pieces, never inside one.
-    const piece = (key: string, children: RenderChildren, isFirst = false) => (
-      <Box key={key} flexDirection="row" flexShrink={0}>
-        {!isFirst && <Text dimColor> | </Text>}
-        {children}
-      </Box>
-    )
-    const ctx = m.context ?? 0
-    const bar = meterBar(ctx)
-    const ctxColor = ctx >= 75 ? ORANGE : ctx >= 50 ? GOLD : GREEN
-    // The next request's model: the panel's pick, else the session's (which follows /model).
-    const nextModel = c.model ?? (await $.session.model().catch(() => undefined))
-    const cache = cacheText(await read($, lastCall), cacheTtlMs(m.plan), now, nextModel)
-    // A usage window: dim label, bright percent, dim reset.
-    const window = (label: string, l: Limit | null) => {
-      if (!l) return null
-      const reset = resetText(l.resetsAt, now)
-      return piece(label, [
-        <Text key={`${label}-label`} dimColor>{`${label} `}</Text>,
-        <Text key={`${label}-pct`} color={limitColor(l.percent)}>{`${Math.round(l.percent)}%`}</Text>,
-        reset ? <Text key={`${label}-reset`} dimColor>{` · resets ${reset}`}</Text> : null,
-      ])
-    }
-
-    return (
-      <Box flexDirection="column" alignItems="flex-start">
-        <Box key="control-panel-status" flexDirection="row" flexWrap="wrap">
-          {piece('plan', <Text color={GOLD}>{m.plan ?? '…'}</Text>, true)}
-          {piece('model', <Text bold color={ORANGE}>{model ? modelName(model) : '…'}</Text>)}
-          {piece('effort', [
-            <Text key="effort-label" dimColor>effort </Text>,
-            <Text key="effort-value" color={MAUVE}>{effort ? effortName(effort) : '…'}</Text>,
-          ])}
-          {piece('ctx', [
-            <Text key="ctx-label" dimColor>ctx </Text>,
-            <Text key="ctx-filled" color={ctxColor}>{bar.filled}</Text>,
-            <Text key="ctx-empty" color={SLATE}>{bar.empty}</Text>,
-            <Text key="ctx-pct" color={ctxColor}> {m.context === null ? '…' : `${ctx}%`}</Text>,
-          ])}
-          {cache && piece('cache', <Text color={RED}>{cache}</Text>)}
-          {window('usage', m.limit)}
-          {window('weekly', m.week)}
-        </Box>
-        {below}
-      </Box>
-    )
   })
 
   // The modes, then one chip, bottom right.

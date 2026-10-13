@@ -13,7 +13,7 @@
     {
       "name": "control-panel",
       "source": "./claude-code-mods/control-panel",
-      "description": "Status row, model and effort picker, settings and quick actions"
+      "description": "Model and effort picker, settings and quick actions"
     },
     {
       "name": "action-items",
@@ -44,6 +44,11 @@
       "name": "session-meter",
       "source": "./claude-code-mods/session-meter",
       "description": "Context, prompt cache time left and usage, as a chip in the desktop app's footer"
+    },
+    {
+      "name": "session-lens",
+      "source": "./claude-code-mods/session-lens",
+      "description": "Plan, model, effort, context, cache and usage, as a status row under the prompt in the terminal"
     }
   ]
 }

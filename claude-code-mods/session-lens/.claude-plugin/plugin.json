@@ -1,0 +1,11 @@
+{
+  "name": "session-lens",
+  "version": "1.0.0",
+  "description": "Session Lens. A status row under the prompt in the terminal: plan, model, effort, context, prompt cache, and the 5-hour and weekly usage windows",
+  "author": {
+    "name": "Teddymazrin"
+  },
+  "homepage": "https://github.com/Teddymazrin/Claude/tree/main/claude-code-mods",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

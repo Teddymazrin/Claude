@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { BLURB_MAX, EFFORTS, MODELS, QUICK, SETTINGS, isSetting, settingRows, visibleQuick, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, meterBar, baseModel, cacheText, cacheTtlMs, pickLimit, pickWeek, resetText, statusText, untilReset, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { BLURB_MAX, EFFORTS, MODELS, QUICK, SETTINGS, isSetting, settingRows, visibleQuick, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -41,40 +41,6 @@ test('formats headings, names and descriptions', () => {
 test('offers no Auto option for model or effort', () => {
   expect(MODELS.some(m => m.label === 'Auto')).toBe(false)
   expect(EFFORTS.some(f => f.label === 'Auto')).toBe(false)
-})
-
-test('draws the context bar and the time to the usage reset', () => {
-  expect(meterBar(1)).toEqual({ filled: '', empty: '░░░░░░░░' })
-  expect(meterBar(50)).toEqual({ filled: '████', empty: '░░░░' })
-  expect(meterBar(140).filled.length).toBe(8)
-  const now = Date.parse('2026-10-06T12:00:00Z')
-  expect(untilReset('2026-10-06T16:12:00Z', now)).toBe('4h 12m')
-  expect(untilReset('2026-10-06T12:30:00Z', now)).toBe('30m')
-  expect(untilReset('2026-10-09T15:00:00Z', now)).toBe('3d 3h')
-  expect(untilReset(undefined, now)).toBe('')
-})
-
-test('shows the five-hour window first', () => {
-  expect(pickLimit([])).toBe(null)
-  expect(
-    pickLimit([
-      { kind: 'seven_day', percentUsed: 40 },
-      { kind: 'five_hour', percentUsed: 6, resetsAt: '2026-10-06T16:00:00Z' },
-    ]),
-  ).toEqual({ percent: 6, resetsAt: '2026-10-06T16:00:00Z' })
-})
-
-test('builds the footer line', () => {
-  const now = Date.parse('2026-10-06T12:00:00Z')
-  const m = { plan: 'Subscription' as const, context: 1, limit: { percent: 6, resetsAt: '2026-10-06T16:12:00Z' }, week: null }
-  expect(statusText(m, 'claude-opus-5-5', 'medium', now)).toBe(
-    'Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | usage 6% · resets 4h12m',
-  )
-  const both = { ...m, week: { percent: 31.4, resetsAt: '2026-10-07T03:00:00Z' } }
-  expect(statusText(both, 'claude-opus-5-5', 'medium', now)).toBe(
-    'Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | usage 6% · resets 4h12m | weekly 31% · resets 15h',
-  )
-  expect(statusText({ plan: 'API', context: null, limit: null, week: null }, null, null, now)).toBe('API | … | effort … | ctx ░░░░░░░░ …')
 })
 
 test('reads installed plugin folders and tells them from dev folders', () => {
@@ -126,49 +92,6 @@ test('quick commands are plain buttons and only /clear asks first', () => {
   for (const q of QUICK) expect('hotkey' in q).toBe(false)
   expect(QUICK.map(q => q.command)).toEqual(['context-lens', 'reload-plugins', 'clear'])
   expect(QUICK.filter(q => q.confirm).map(q => q.command)).toEqual(['clear'])
-})
-
-test('reads the weekly window apart from the five-hour one', () => {
-  const limits = [
-    { kind: 'seven_day', percentUsed: 40, resetsAt: '2026-10-09T15:00:00Z' },
-    { kind: 'five_hour', percentUsed: 6 },
-  ]
-  expect(pickWeek(limits)).toEqual({ percent: 40, resetsAt: '2026-10-09T15:00:00Z' })
-  expect(pickWeek([{ kind: 'five_hour', percentUsed: 6 }])).toBe(null)
-  expect(pickLimit([{ kind: 'seven_day', percentUsed: 40 }])).toBe(null)
-})
-
-test('shows a reset as a countdown under a day, else the weekday', () => {
-  const now = Date.parse('2026-10-06T12:00:00Z')
-  expect(resetText('2026-10-06T16:12:00Z', now)).toBe('4h12m')
-  expect(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).toContain(resetText('2026-10-09T15:00:00Z', now))
-  expect(resetText(undefined, now)).toBe('')
-})
-
-test('counts down to the prompt cache going cold', () => {
-  const now = Date.parse('2026-10-06T12:00:00Z')
-  const hour = cacheTtlMs('Subscription')
-  expect(hour).toBe(3_600_000)
-  expect(cacheTtlMs('API')).toBe(300_000)
-  expect(cacheText(null, hour, now)).toBe('')
-  expect(cacheText(now - 18 * 60_000, hour, now)).toBe('cache 42m')
-  expect(cacheText(now - hour + 30_000, hour, now)).toBe('cache <1m')
-  expect(cacheText(now - hour, hour, now)).toBe('cache cold')
-  const m = { plan: 'API' as const, context: 1, limit: null, week: null }
-  expect(statusText(m, null, null, now, 'cache 4m')).toBe('API | … | effort … | ctx ░░░░░░░░ 1% | cache 4m')
-})
-
-test('a different model starts with a cold cache', () => {
-  const now = Date.parse('2026-10-06T12:00:00Z')
-  const hour = cacheTtlMs('Subscription')
-  const last = { at: now - 18 * 60_000, model: 'claude-opus-5-5' }
-  expect(baseModel('claude-opus-5-5[1m]')).toBe('claude-opus-5-5')
-  expect(baseModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5')
-  expect(cacheText(last, hour, now, 'claude-opus-5-5')).toBe('cache 42m')
-  expect(cacheText(last, hour, now, 'claude-opus-5-5[1m]')).toBe('cache 42m')
-  expect(cacheText(last, hour, now, 'claude-sonnet-5-5')).toBe('cache cold · new model')
-  expect(cacheText(last, hour, now)).toBe('cache 42m')
-  expect(cacheText(now - 18 * 60_000, hour, now, 'claude-sonnet-5-5')).toBe('cache 42m')
 })
 
 test('shows Context Lens only while its command is loaded', () => {
