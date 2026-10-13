@@ -15,6 +15,8 @@ const seen = atom({ plugin: 'session-lens', key: 'seen' } as const, null)
 const meter = atom({ plugin: 'session-lens', key: 'meter' } as const, { plan: null, context: null, limit: null, week: null })
 // When the main thread's last response finished, and which model gave it: the prompt cache's clock starts there.
 const lastCall = atom({ plugin: 'session-lens', key: 'lastCall' } as const, null)
+// The cold spell the box was closed for; it comes back for the next one.
+const coldDismissed = atom({ plugin: 'session-lens', key: 'coldDismissed' } as const, null)
 
 // Control Panel's model and effort pick, when it is installed: its requests go out with it.
 type Pick = { model: string | null; effort: string | null }
@@ -118,16 +120,14 @@ export const cacheText = (last: LastCall | null, ttlMs: number, now: number, nex
   return mins < 1 ? 'cache <1m' : `cache ${mins}m`
 }
 
-// From this context percentage, a cold cache gets a warning: the next message re-reads the chat at full price.
-// 0: warn whenever the cache is cold, however small the chat.
-export const COLD_WARN_AT = 0
-export const COLD_WARNING = '⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh'
+/** The cold-cache box's line after its title. */
+export const COLD_WHY = ' · Your next message re-reads the entire chat at full price and uses more of your usage.'
 
-/** True when the cache is cold (or cold for a new model) and the chat is big enough that the next message costs a lot of usage. */
-export const isCostlyCold = (cache: string, context: number | null) => cache.startsWith('cache cold') && (context ?? 0) >= COLD_WARN_AT
+/** The cold-cache box's bold title: `Cache cold`, or `Cache cold · new model` after a switch. */
+export const coldTitle = (cache: string) => cache.replace(/^cache cold/, 'Cache cold')
 
-/** The cache piece, with the warning after it when a cold cache will cost a lot. */
-export const cacheWithWarning = (cache: string, context: number | null) => (isCostlyCold(cache, context) ? `${cache} ${COLD_WARNING}` : cache)
+/** Which cold spell this is: the last reply and the model the next request goes to. A new reply or another switch is a new one. */
+export const coldKey = (last: LastCall, model: string | null | undefined) => `${last.at}|${model ?? ''}`
 
 /** The row as plain text: plan | model | effort | context bar | cache | 5-hour window | weekly window. */
 export const statusText = (m: Meter, model: string | null | undefined, effort: string | null | undefined, now: number, cache = '') => {
@@ -138,7 +138,7 @@ export const statusText = (m: Meter, model: string | null | undefined, effort: s
     `effort ${effort ? effortName(effort) : '…'}`,
     `ctx ${bar.filled}${bar.empty} ${m.context === null ? '…' : `${m.context}%`}`,
   ]
-  if (cache) parts.push(cacheWithWarning(cache, m.context))
+  if (cache) parts.push(cache)
   if (m.limit) parts.push(limitText('usage', m.limit, now))
   if (m.week) parts.push(limitText('weekly', m.week, now))
   return parts.join(' | ')
@@ -214,6 +214,54 @@ export const register: Register = on => {
     return result
   }).catch(($, e, next) => next(e))
 
+  // Above the prompt, in the terminal: a box when the cache has gone cold, once per cold spell.
+  // Write handoff runs Context Handoff's /handoff; Keep going and ✕ close it until the next cold spell.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const below = await next(e)
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return below
+    const last = await read($, lastCall)
+    if (!last) return below
+    const m = await read($, meter)
+    const sessionModel = await $.session.model().catch(() => undefined)
+    const { model } = nextRequest(await readPick($), await read($, seen), sessionModel)
+    const cache = cacheText(last, cacheTtlMs(m.plan), await $.clock.now(), model ?? undefined)
+    if (!cache.startsWith('cache cold')) return below
+    const key = coldKey(last, model)
+    if ((await read($, coldDismissed)) === key) return below
+
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const dismiss = () => update($, coldDismissed, () => key)
+    const handoff = async () => {
+      await dismiss()
+      await $.command.run({ command: 'handoff' }).catch(() => {
+        $.ui.toast('Session Lens: /handoff needs the Context Handoff mod · or run /clear to start fresh', { timeoutMs: 10000 })
+      })
+    }
+    return (
+      <Box flexDirection="column">
+        <Box key="cold-cache" flexDirection="column" borderStyle="round" borderColor={ORANGE} paddingX={1}>
+          <Box key="cold-header" flexDirection="row" justifyContent="space-between">
+            <Text>
+              <Text color={RED}>⚠ </Text>
+              <Text bold color={RED}>{coldTitle(cache)}</Text>
+              <Text dimColor>{COLD_WHY}</Text>
+            </Text>
+            <Button key="cold-close" plain label="✕" hover={{ bold: true }} onPress={dismiss} />
+          </Box>
+          <Box key="cold-actions" flexDirection="row" flexWrap="wrap">
+            <Box key="cold-handoff-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
+              <Button key="cold-handoff" plain label="✎ Write handoff" hover={{ bold: true }} onPress={handoff} />
+            </Box>
+            <Box key="cold-keep-box" backgroundColor={SLATE} paddingX={1} hover={{ backgroundColor: ORANGE }}>
+              <Button key="cold-keep" plain label="Keep going" hover={{ bold: true }} onPress={dismiss} />
+            </Box>
+          </Box>
+        </Box>
+        {below}
+      </Box>
+    )
+  }).catch(($, e, next) => next(e))
+
   // The status row on the left, in the hint line's place, above the engine's hint.
   // Terminal only: the desktop app does not draw a mod's tree in the hint line.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
@@ -262,10 +310,7 @@ export const register: Register = on => {
             <Text key="ctx-empty" color={SLATE}>{bar.empty}</Text>,
             <Text key="ctx-pct" color={ctxColor}> {m.context === null ? '…' : `${ctx}%`}</Text>,
           ])}
-          {cache && piece('cache', [
-            <Text key="cache-text" color={RED}>{cache}</Text>,
-            isCostlyCold(cache, m.context) ? <Text key="cache-warn" bold color={RED}>{` ${COLD_WARNING}`}</Text> : null,
-          ])}
+          {cache && piece('cache', <Text color={RED}>{cache}</Text>)}
           {window('usage', m.limit)}
           {window('weekly', m.week)}
         </Box>

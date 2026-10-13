@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { baseModel, cacheMinsLeft, cacheText, meterPieces, pickLimit, pickWeek, resetText } from './register'
+import { COLD_WHY, baseModel, cacheMinsLeft, cacheText, coldKey, meterPieces, pickLimit, pickWeek, resetText } from './register'
 
 const HOUR = 60 * 60_000
 const FOOTER = { component: 'SessionMode', viewport: { columns: 100, rows: 40 }, props: { modes: [] } } as const
@@ -45,12 +45,15 @@ test('the footer line: context, cache, 5-hour with its reset, weekly', () => {
   expect(meterPieces({ plan: null, context: null, limit: null, week: null }, null, now).map(p => p.value)).toEqual(['…'])
 })
 
-test('a cold cache warns that the next message re-reads the chat at full price, however small the chat', () => {
+test('a cold cache: the footer stays short, the box says what it costs, once per cold spell', () => {
   const now = Date.parse('2026-10-12T00:00:00Z')
   const cold = { at: now - 2 * HOUR, model: 'claude-opus-5-5' }
   const cache = (context: number) =>
     meterPieces({ plan: 'Subscription', context, limit: null, week: null }, cold, now, 'claude-opus-5-5').find(p => p.key === 'cache')?.value
-  expect(cache(6)).toBe('cold ⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh')
+  expect(cache(6)).toBe('cold')
+  expect(COLD_WHY).toBe(' · Your next message re-reads the entire chat at full price and uses more of your usage.')
+  expect(coldKey(cold, 'claude-opus-5-5')).not.toBe(coldKey(cold, 'claude-sonnet-5-5'))
+  expect(coldKey(cold, 'claude-opus-5-5')).not.toBe(coldKey({ ...cold, at: now }, 'claude-opus-5-5'))
   const warm = meterPieces({ plan: 'Subscription', context: 80, limit: null, week: null }, { at: now - 18 * 60_000, model: 'claude-opus-5-5' }, now)
   expect(warm.find(p => p.key === 'cache')?.value).toBe('42m')
 })

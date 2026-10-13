@@ -1,6 +1,21 @@
 import { expect, test } from 'claude-code/testing'
 
-import { baseModel, cacheText, cacheTtlMs, meterBar, modelName, nextRequest, pickLimit, pickWeek, resetText, statusText, untilReset } from './register'
+import {
+  COLD_WHY,
+  baseModel,
+  cacheText,
+  cacheTtlMs,
+  coldKey,
+  coldTitle,
+  meterBar,
+  modelName,
+  nextRequest,
+  pickLimit,
+  pickWeek,
+  resetText,
+  statusText,
+  untilReset,
+} from './register'
 
 test('draws the context bar and the time to the usage reset', () => {
   expect(meterBar(1)).toEqual({ filled: '', empty: '░░░░░░░░' })
@@ -61,14 +76,16 @@ test('counts down to the prompt cache going cold, and a new model starts cold', 
   expect(baseModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5')
 })
 
-test('a cold cache warns that the next message re-reads the chat at full price, however small the chat', () => {
+test('a cold cache: the row stays short, the box says what it costs, once per cold spell', () => {
   const now = Date.parse('2026-10-06T12:00:00Z')
-  const row = (context: number, cache: string) => statusText({ plan: 'Subscription', context, limit: null, week: null }, 'claude-opus-5-5', 'medium', now, cache)
-  expect(row(40, 'cache cold')).toBe(
-    'Subscription | Opus 5.5 | effort Medium | ctx ███░░░░░ 40% | cache cold ⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh',
-  )
-  expect(row(6, 'cache cold · new model')).toContain('cache cold · new model ⚠ your next message re-reads the entire chat at full price')
-  expect(row(80, 'cache 42m')).toBe('Subscription | Opus 5.5 | effort Medium | ctx ██████░░ 80% | cache 42m')
+  const row = (cache: string) => statusText({ plan: 'Subscription', context: 6, limit: null, week: null }, 'claude-opus-5-5', 'medium', now, cache)
+  expect(row('cache cold · new model')).toBe('Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 6% | cache cold · new model')
+  expect(coldTitle('cache cold')).toBe('Cache cold')
+  expect(coldTitle('cache cold · new model')).toBe('Cache cold · new model')
+  expect(COLD_WHY).toBe(' · Your next message re-reads the entire chat at full price and uses more of your usage.')
+  const last = { at: now, model: 'claude-opus-5-5' }
+  expect(coldKey(last, 'claude-opus-5-5')).not.toBe(coldKey(last, 'claude-sonnet-5-5'))
+  expect(coldKey(last, 'claude-opus-5-5')).not.toBe(coldKey({ ...last, at: now + 1 }, 'claude-opus-5-5'))
 })
 
 test("the next request: Control Panel's pick, else the session's model (/model), else what was sent", () => {

@@ -10,6 +10,8 @@ declare module 'claude-code' {
       seen: Seen | null
       meter: Meter
       lastCall: LastCall | null
+      /** The cold spell (`coldKey`) the cold-cache box was closed for; null until one is closed. */
+      coldDismissed: string | null
     }
   }
 }

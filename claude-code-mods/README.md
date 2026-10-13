@@ -6,8 +6,8 @@ Nine mods for Claude Code. Most work both in the terminal and in the desktop app
 | --- | --- | --- | --- |
 | [Bare View](#bare-view) | 1.15.1 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.12.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Session Lens](#session-lens) | 1.1.0 | **Terminal** | A full status row under the prompt: plan, model, effort, context bar, cache countdown, 5-hour and weekly limits |
-| [Session Meter](#session-meter) | 0.4.0 | **Desktop app** | A short line in the app's footer: context, cache countdown and 5-hour usage |
+| [Session Lens](#session-lens) | 1.2.0 | **Terminal** | A full status row under the prompt: plan, model, effort, context bar, cache countdown, 5-hour and weekly limits |
+| [Session Meter](#session-meter) | 0.5.0 | **Desktop app** | A short line in the app's footer: context, cache countdown and 5-hour usage |
 | [Action Items](#action-items) | 6.4.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Context Handoff](#context-handoff) | 1.4.0 | Both | Boxes at 50%, 65% and 80% full that explain why to start fresh, a handoff note written for you, and one click to clear the chat and continue from it |
@@ -115,13 +115,20 @@ ctx 23% · cache 42m · 5h 6%
 
 ## Cold-cache warning
 
-Both Session Lens and Session Meter warn you when your next message will cost more. Whenever the prompt cache has gone cold (or you've switched models), whatever the chat's size, the cache piece reads, in red:
+Both Session Lens (in the terminal) and Session Meter (in the desktop app) warn you when your next message will cost more. Whenever the prompt cache has gone cold, or you've switched models, whatever the chat's size, a box pops up above the prompt with an orange frame:
 
 ```
-cache cold ⚠ your next message re-reads the entire chat at full price and uses more of your usage · /handoff to start fresh
+╭──────────────────────────────────────────────────────────────────────────────────────────╮
+│ ⚠ Cache cold · Your next message re-reads the entire chat at full price and uses     ✕  │
+│   more of your usage.                                                                    │
+│ [✎ Write handoff] [Keep going]                                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
-That's the moment a handoff saves the most: run `/handoff`, then **↻ Clear this chat & continue with note**, and the fresh chat starts small. The bigger the chat, the more that re-read costs.
+- **✎ Write handoff** runs `/handoff` (needs [Context Handoff](#context-handoff)); then **↻ Clear this chat & continue with note** starts a small fresh chat. That's the moment a handoff saves the most, and the bigger the chat the more the re-read costs
+- **Keep going** or **✕** closes it. It comes back the next time the cache goes cold, after your next reply or another model switch
+- After a model switch the title reads **Cache cold · new model**
+- The status row and footer line stay short: they just say `cache cold` (or `cache cold · new model`)
 
 ## Action Items
 
