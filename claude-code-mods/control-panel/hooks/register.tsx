@@ -512,8 +512,10 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   // The status row on the left, in the hint line's place, above the engine's hint.
+  // Terminal only: in the app this line is Session Meter's.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const below = await next(e)
+    if (e.surface !== 'terminal') return below
     const { Box, Text } = $.ui.resolve(e)
 
     const m = await read($, meter)

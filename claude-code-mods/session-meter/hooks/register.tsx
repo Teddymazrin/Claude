@@ -148,9 +148,10 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // One line of colored text at the left of the footer, in the app only: the terminal has Control Panel's status row.
-  // Plain Text, no Button: the app draws a Button natively from its label alone, dropping colored children.
-  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+  // One line of colored text in the hint line under the prompt, beside the app's mode picker, in the app only:
+  // the terminal has Control Panel's status row there. Plain Text, no Button: the app draws a Button natively
+  // from its label alone, dropping colored children.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const below = await next(e)
     if (e.surface === 'terminal') return below
     const { Box, Text } = $.ui.resolve(e)
@@ -161,31 +162,17 @@ export const register: Register = on => {
     const nextModel = await $.session.model().catch(() => undefined)
     const pieces = meterPieces(m, last, now, nextModel)
 
-    const mine = (
-      <Box key="session-meter" flexDirection="row" flexShrink={0}>
-        {pieces.flatMap((p, i) => [
-          i > 0 ? <Text key={`sep-${p.key}`} color={MUTED}> · </Text> : null,
-          <Text key={`label-${p.key}`} color={MUTED}>{`${p.label} `}</Text>,
-          <Text key={`value-${p.key}`} color={p.color}>{p.value}</Text>,
-          p.note ? <Text key={`note-${p.key}`} color={MUTED}>{` (${p.note})`}</Text> : null,
-        ])}
-      </Box>
-    )
-
-    const isEngine = 'type' in below && below.type === 'engine'
-    // Another mod's chip is beneath: sit to its left, on the same line.
-    if (!isEngine)
-      return (
-        <Box flexDirection="row" alignItems="flex-end">
-          <Box marginRight={2}>{mine}</Box>
-          {below}
-        </Box>
-      )
-    // The engine's modes are beneath: keep them beside it.
     return (
-      <Box flexDirection="row" alignItems="flex-end">
-        {mine}
-        {e.props.modes.length > 0 ? <Box marginLeft={2}>{below}</Box> : null}
+      <Box flexDirection="row">
+        <Box key="session-meter" flexDirection="row" flexShrink={0}>
+          {pieces.flatMap((p, i) => [
+            i > 0 ? <Text key={`sep-${p.key}`} color={MUTED}> · </Text> : null,
+            <Text key={`label-${p.key}`} color={MUTED}>{`${p.label} `}</Text>,
+            <Text key={`value-${p.key}`} color={p.color}>{p.value}</Text>,
+            p.note ? <Text key={`note-${p.key}`} color={MUTED}>{` (${p.note})`}</Text> : null,
+          ])}
+        </Box>
+        {e.props.hint ? <Box marginLeft={2}>{below}</Box> : null}
       </Box>
     )
   }).catch(($, e, next) => next(e))

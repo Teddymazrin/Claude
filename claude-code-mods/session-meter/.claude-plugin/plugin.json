@@ -1,7 +1,7 @@
 {
   "name": "session-meter",
-  "version": "0.2.0",
-  "description": "Session Meter. Shows context used, time left on the warm prompt cache, and plan usage as one line of text in the desktop app's footer",
+  "version": "0.3.0",
+  "description": "Session Meter. Shows context used, time left on the warm prompt cache, and plan usage as one line of text beside the desktop app's mode picker",
   "author": {
     "name": "Teddymazrin"
   },

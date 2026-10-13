@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { baseModel, cacheMinsLeft, cacheText, meterPieces, pickLimit, pickWeek, resetText } from './register'
 
 const HOUR = 60 * 60_000
-const FOOTER = { component: 'SessionMode', viewport: { columns: 100, rows: 40 }, props: { modes: [] } } as const
+const FOOTER = { component: 'PromptHint', viewport: { columns: 100, rows: 40 }, props: { isDraft: false, isWorking: false, hint: '' } } as const
 
 test('the cache counts down from the last reply and goes cold on a new model', () => {
   const last = { at: 0, model: 'claude-opus-5-5' }
