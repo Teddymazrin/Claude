@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { COLD_WHY, coldKey, coldTitle } from './cold'
+import { COLD_WHY, coldKey, coldSwitchWhy, coldTitle } from './cold'
 import { baseModel, cacheColor, cacheText, cacheTtlMs, meterBar, modelName, nextRequest, pickLimit, pickWeek, resetText, untilReset } from './session'
 import { cacheLabel, footerPieces, footerText, statusText } from './status'
 
@@ -84,6 +84,10 @@ test('the cold-cache box says what it costs, once per cold spell', () => {
   expect(coldTitle('cache cold')).toBe('Cache cold')
   expect(coldTitle('cache cold · new model')).toBe('Cache cold · new model')
   expect(COLD_WHY).toBe(' · Your next message re-reads the entire chat at full price and uses more of your usage.')
+  expect(coldSwitchWhy('Sonnet 5.5', 'Opus 5.5')).toBe(
+    " · Sonnet 5.5 hasn't read this chat yet, so your next message sends all of it again at full price and uses more of your usage. Opus 5.5 still has it saved.",
+  )
+  expect(coldSwitchWhy('Sonnet 5.5', 'Opus 5.5')).not.toMatch(/handoff/i)
   const last = { at: 1000, model: 'claude-opus-5-5' }
   expect(coldKey(last, 'claude-opus-5-5')).not.toBe(coldKey(last, 'claude-sonnet-5-5'))
   expect(coldKey(last, 'claude-opus-5-5')).not.toBe(coldKey({ ...last, at: 2000 }, 'claude-opus-5-5'))

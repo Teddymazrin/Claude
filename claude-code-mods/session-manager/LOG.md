@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.0.2 (2026-10-13)
+
+**Found in use:** after a model switch the cold-cache box offered **Write handoff**, but the new model has no cache, so writing the note there re-reads the whole chat at full price, which is the cost the box warns about.
+
+**What changed:** when the cache is cold only because the model changed and the old model's cache is still warm, the box offers **↩ Switch back to <old model>** (put in the prompt box, Enter sends it) and says to write the handoff there. In plain words, with no mention of handoffs: "Sonnet 5.5 hasn't read this chat yet, so your next message sends all of it again at full price… Opus 5.5 still has it saved." The box comes back on every switch, also a second switch to the same model with no reply between (closing it used to hide it for good until the next reply). When the cache is cold because of the idle hour, or the old model's is cold too, it still offers **Write handoff**, which costs the same as any next message.
+
 ## 1.0.1 (2026-10-13)
 
 **Asked for:** in the desktop app, the numbers crowded Control Panel's button out of the footer, and Bare View's checklist must stay the lowest box above the prompt.

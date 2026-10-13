@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer } from 'claude-code'
 
 import type { Note, Plan, Seen } from '../types'
-import { COLD_WHY, coldKey, coldTitle } from './cold'
+import { COLD_WHY, coldKey, coldSwitchWhy, coldTitle } from './cold'
 import {
   AMBER,
   COMMAND,
@@ -128,13 +128,13 @@ async function show($: EngineInterface, isAsked: boolean) {
 }
 
 // After the command has finished, so the turn isn't started from inside it. If the
-// engine still refuses, the prompt goes in the box instead: one Enter sends it.
-function send($: EngineInterface, text: string) {
+// engine still refuses, the prompt goes in the box instead: one Enter sends it, and `hint` says what that does.
+function send($: EngineInterface, text: string, hint = `${TITLE}: press Enter to send the prompt`) {
   $.clock.after(SEND_DELAY_MS, () => {
     $.prompt.submit({ text }).catch(async (error: unknown) => {
       const filled = await $.prompt.fill({ text }).catch(() => undefined)
       const why = error instanceof Error ? error.message : String(error)
-      $.ui.toast(filled?.isFilled ? `${TITLE}: press Enter to send the prompt` : `${TITLE}: couldn't start the turn (${why})`, { timeoutMs: 10000 })
+      $.ui.toast(filled?.isFilled ? hint : `Couldn't send it (${why}) · type ${text}`, { timeoutMs: 10000 })
     })
   })
 }
@@ -282,7 +282,7 @@ async function handoffBoxes($: EngineInterface, e: Surface) {
 async function coldBox($: EngineInterface, e: Surface) {
   // Nothing to be cold before Claude's first reply; skip the rest of the reads.
   if (!(await read($, lastCall))) return null
-  const { last, model, cache } = await snapshot($)
+  const { m, last, model, now, cache } = await snapshot($)
   if (!last || !isCold(cache)) return null
   const key = coldKey(last, model)
   if ((await read($, coldDismissed)) === key) return null
@@ -293,26 +293,55 @@ async function coldBox($: EngineInterface, e: Surface) {
     await dismiss()
     await writeHandoff($)
   }
+  // Cold only because the model changed, and the old model's cache is still warm: go back there to write the note.
+  const isSwitch = cache === 'cache cold · new model' && last.at + cacheTtlMs(m.plan) > now
+  const oldId = last.model
+  const switchBack = async () => {
+    await dismiss()
+    send($, `/model ${oldId}`, `Press Enter to switch back to ${modelName(oldId)}`)
+  }
   return (
     <Box key="cold-cache" flexDirection="column" borderStyle="round" borderColor={ORANGE} paddingX={1}>
       <Box key="cold-header" flexDirection="row" justifyContent="space-between">
         <Text>
           <Text color={RED}>⚠ </Text>
           <Text bold color={RED}>{coldTitle(cache)}</Text>
-          <Text dimColor>{COLD_WHY}</Text>
+          <Text dimColor>{isSwitch ? coldSwitchWhy(model ? modelName(model) : 'This model', modelName(oldId)) : COLD_WHY}</Text>
         </Text>
         <Button key="cold-close" plain label="✕" hover={{ bold: true }} onPress={dismiss} />
       </Box>
       <Box key="cold-actions" flexDirection="row" flexWrap="wrap">
-        <Box key="cold-handoff-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
-          <Button key="cold-handoff" plain label="✎ Write handoff" hover={{ bold: true }} onPress={handoff} />
-        </Box>
+        {isSwitch ? (
+          <Box key="cold-back-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
+            <Button key="cold-back" plain label={`↩ Switch back to ${modelName(oldId)}`} hover={{ bold: true }} onPress={switchBack} />
+          </Box>
+        ) : (
+          <Box key="cold-handoff-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
+            <Button key="cold-handoff" plain label="✎ Write handoff" hover={{ bold: true }} onPress={handoff} />
+          </Box>
+        )}
         <Box key="cold-keep-box" backgroundColor={SLATE} paddingX={1} hover={{ backgroundColor: ORANGE }}>
           <Button key="cold-keep" plain label="Keep going" hover={{ bold: true }} onPress={dismiss} />
         </Box>
       </Box>
     </Box>
   )
+}
+
+// The model the last tick saw, to notice a switch in the app's model menu, which no hook hears.
+let tickModel: string | null | undefined
+
+/**
+ * Lets the cold-cache box show again after it was closed: when the cache is warm again (switched back to the model
+ * that has it) or the model changed. Runs on the tick, outside drawing, so the write sticks; a second switch to the
+ * same model with no reply between looks like the spell already closed otherwise.
+ */
+async function rearmCold($: EngineInterface) {
+  const { last, model, cache } = await snapshot($)
+  const isSwitched = tickModel !== undefined && model !== tickModel
+  tickModel = model
+  if ((await read($, coldDismissed)) === null) return
+  if (!last || !isCold(cache) || isSwitched) await update($, coldDismissed, () => null)
 }
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
@@ -325,7 +354,7 @@ export const register: Register = on => {
     await measure($, usage?.context.percent, usage?.rateLimits ?? []).catch(() => {})
     tick?.cancel()
     tick = $.clock.every(2_000, () => {
-      $.ui.invalidate('ui.render')
+      void rearmCold($).finally(() => $.ui.invalidate('ui.render'))
     })
     await startHandoff($)
     return next(e)
@@ -404,6 +433,8 @@ export const register: Register = on => {
   // A model switch changes which cache is warm: redraw now rather than at the next tick.
   on('command.run', { command: 'model' }, async ($, e, next) => {
     const result = await next(e)
+    // Every /model is a new switch: a box closed for an earlier switch to the same model shows again.
+    await update($, coldDismissed, () => null).catch(() => {})
     $.ui.invalidate('ui.render')
     return result
   }).catch(($, e, next) => next(e))
