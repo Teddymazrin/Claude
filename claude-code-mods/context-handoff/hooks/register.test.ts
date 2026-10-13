@@ -1,19 +1,22 @@
 import { expect, test } from 'claude-code/testing'
 
-import { LEVELS, copyPrompt, isOpen, levelFor, warningText, writePrompt } from './register'
+import { LEVELS, copyPrompt, isOpen, levelFor, offerText, writePrompt } from './register'
 
-test('warns once at each level the context reaches', () => {
-  expect(LEVELS).toEqual([70, 85])
+test('offers once at each level the context reaches', () => {
+  expect(LEVELS).toEqual([50, 65, 80])
   expect(levelFor(10)).toBe(0)
-  expect(levelFor(69)).toBe(0)
-  expect(levelFor(70)).toBe(70)
-  expect(levelFor(84)).toBe(70)
-  expect(levelFor(91)).toBe(85)
+  expect(levelFor(49)).toBe(0)
+  expect(levelFor(50)).toBe(50)
+  expect(levelFor(64)).toBe(50)
+  expect(levelFor(65)).toBe(65)
+  expect(levelFor(91)).toBe(80)
 })
 
-test('gets more urgent at the last level', () => {
-  expect(warningText(72, 70)).toBe('Context 72% full · /handoff saves a handoff note before it fills')
-  expect(warningText(88, 85)).toBe('Context 88% full · run /handoff now, then copy the prompt and /clear')
+test('says why, more urgently at each level', () => {
+  expect(offerText(52)).toBe('This chat is 52% full · Long chats use up more of your usage and Claude gets less sharp. Start fresh with a summary?')
+  expect(offerText(67)).toBe('This chat is 67% full · Every message now costs more usage, and Claude may start missing details. Start fresh at your next break.')
+  expect(offerText(83)).toBe('This chat is 83% full · Almost full: soon Claude shrinks the chat and forgets details, and each message costs the most usage. Start fresh now.')
+  expect(offerText(3)).toBe('This chat is 3% full · Long chats use up more of your usage and Claude gets less sharp. Start fresh with a summary?')
 })
 
 test('opens the note again only when asked to', () => {

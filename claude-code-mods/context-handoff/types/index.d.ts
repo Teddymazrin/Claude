@@ -13,6 +13,8 @@ declare module 'claude-code' {
       note: Note | null
       /** True while the note shows in the box above the prompt (the side pane had no room). */
       band: boolean
+      /** The context percentage the handoff offer shows above the prompt at; null while it is not showing. */
+      offer: number | null
     }
   }
 }

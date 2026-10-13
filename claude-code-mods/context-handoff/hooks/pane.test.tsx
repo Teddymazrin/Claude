@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { COPY_LABEL, RESTART_LABEL } from './register'
+
 const NOTE = '# Handoff: C:\\work\\app\nWritten today\n## Next steps\n1. Ship it'
 const PANE = {
   plugin: 'context-handoff',
@@ -61,4 +63,32 @@ test('an empty note is refused and the pane stays empty', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' } as never)
   expect(await ui.find({ type: 'Text', text: /No note yet/ })).toBeTruthy()
   await ui.unmount()
+})
+
+test('both ways on show, and Clear does nothing until confirmed', async ($, on) => {
+  mock.store(on)
+  const ran: string[] = []
+  on('session.root', () => ({ value: 'C:\work\app' }) as never)
+  on('clock.now', () => ({ value: 1_000 }))
+  on('command.run', ($, e) => {
+    ran.push((e as { command: string }).command)
+    return { value: { text: '' } } as never
+  })
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  await $.tool.call({ tool: 'mcp__context-handoff__handoff_note', note: NOTE } as never)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface } as never)
+    expect(await ui.find({ key: 'start-fresh' })).toBeTruthy()
+    expect(await ui.find({ key: 'copy-prompt' })).toBeTruthy()
+    expect(await ui.find({ type: 'Button', label: COPY_LABEL })).toBeTruthy()
+    expect(await ui.find({ type: 'Button', label: RESTART_LABEL })).toBeTruthy()
+    // No one answers the confirm here, so the chat is left alone.
+    await ui.press({ key: 'start-fresh' })
+    expect(ran).toEqual([])
+    await ui.unmount()
+  }
 })
