@@ -39,6 +39,11 @@
       "name": "tenant-lens",
       "source": "./claude-code-mods/tenant-lens",
       "description": "Shows the Azure tenant, subscription and account in use, under the prompt; no tokens"
+    },
+    {
+      "name": "session-meter",
+      "source": "./claude-code-mods/session-meter",
+      "description": "Context, prompt cache time left and usage, as a chip in the desktop app's footer"
     }
   ]
 }
