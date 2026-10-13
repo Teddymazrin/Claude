@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { LEVELS, copyPrompt, isOpen, levelFor, offerText, writePrompt } from './register'
+import { LEVELS, copyPrompt, isOpen, levelFor, offerText, writePrompt } from './handoff'
 
 test('offers once at each level the context reaches', () => {
   expect(LEVELS).toEqual([50, 65, 80])

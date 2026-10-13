@@ -26,9 +26,9 @@
       "description": "Asks before risky commands and edits; logs what it stopped"
     },
     {
-      "name": "context-handoff",
-      "source": "./claude-code-mods/context-handoff",
-      "description": "Warns as context fills; writes and resumes a handoff note per project"
+      "name": "session-manager",
+      "source": "./claude-code-mods/session-manager",
+      "description": "Plan, model, context, cache and usage (terminal row or app footer), a cold-cache box, and handoff reminders and notes"
     },
     {
       "name": "context-lens",
@@ -39,16 +39,6 @@
       "name": "tenant-lens",
       "source": "./claude-code-mods/tenant-lens",
       "description": "Shows the Azure tenant, subscription and account in use, under the prompt; no tokens"
-    },
-    {
-      "name": "session-meter",
-      "source": "./claude-code-mods/session-meter",
-      "description": "Context, prompt cache time left and usage, as a chip in the desktop app's footer"
-    },
-    {
-      "name": "session-lens",
-      "source": "./claude-code-mods/session-lens",
-      "description": "Plan, model, effort, context, cache and usage, as a status row under the prompt in the terminal"
     }
   ]
 }

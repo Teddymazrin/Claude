@@ -1,13 +1,13 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { COPY_LABEL, RESTART_LABEL } from './register'
+import { COPY_LABEL, RESTART_LABEL } from './handoff'
 
 const NOTE = '# Handoff: C:\\work\\app\nWritten today\n## Next steps\n1. Ship it'
 const PANE = {
-  plugin: 'context-handoff',
+  plugin: 'session-manager',
   component: 'Pane',
-  props: { title: 'Context Handoff', isFocused: true, bodyColumns: 56 },
-  requestId: 'context-handoff',
+  props: { title: 'Handoff', isFocused: true, bodyColumns: 56 },
+  requestId: 'session-manager-handoff',
   viewport: { columns: 60, rows: 40 },
 } as const
 
@@ -30,7 +30,7 @@ test('the note Claude sends shows in the pane, and Copy prompt copies it whole',
     return <Box />
   })
 
-  const sent = await $.tool.call({ tool: 'mcp__context-handoff__handoff_note', note: NOTE } as never)
+  const sent = await $.tool.call({ tool: 'mcp__session-manager__handoff_note', note: NOTE } as never)
   expect(String((sent as { result?: unknown }).result)).toContain('Saved')
 
   // Session-only: nothing lands in the cross-session store.
@@ -57,7 +57,7 @@ test('an empty note is refused and the pane stays empty', async ($, on) => {
     return <Box />
   })
 
-  const sent = await $.tool.call({ tool: 'mcp__context-handoff__handoff_note', note: '  ' } as never)
+  const sent = await $.tool.call({ tool: 'mcp__session-manager__handoff_note', note: '  ' } as never)
   expect(String((sent as { result?: unknown }).result)).toContain('not saved')
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' } as never)
@@ -79,7 +79,7 @@ test('both ways on show, and Clear does nothing until confirmed', async ($, on) 
     return <Box />
   })
 
-  await $.tool.call({ tool: 'mcp__context-handoff__handoff_note', note: NOTE } as never)
+  await $.tool.call({ tool: 'mcp__session-manager__handoff_note', note: NOTE } as never)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface } as never)
     expect(await ui.find({ key: 'start-fresh' })).toBeTruthy()

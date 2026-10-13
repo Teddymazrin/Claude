@@ -1,16 +1,14 @@
 # Claude Code mods
 
-Nine mods for Claude Code. Most work both in the terminal and in the desktop app's Code tab; the two session meters are each made for one of them (see [Session Lens or Session Meter?](#session-lens-or-session-meter)).
+Seven mods for Claude Code. They all work in the terminal and in the desktop app's Code tab.
 
 | Mod | Latest | Works in | What it does |
 | --- | --- | --- | --- |
 | [Bare View](#bare-view) | 1.15.1 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.12.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Session Lens](#session-lens) | 1.2.0 | **Terminal** | A full status row under the prompt: plan, model, effort, context bar, cache countdown, 5-hour and weekly limits |
-| [Session Meter](#session-meter) | 0.5.0 | **Desktop app** | A short line in the app's footer: context, cache countdown and 5-hour usage |
+| [Session Manager](#session-manager) | 1.0.0 | Both | Plan, model, context, cache and usage (a row in the terminal, a footer line in the app); a box when the cache goes cold; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
 | [Action Items](#action-items) | 6.4.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
-| [Context Handoff](#context-handoff) | 1.4.0 | Both | Boxes at 50%, 65% and 80% full that explain why to start fresh, a handoff note written for you, and one click to clear the chat and continue from it |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
 | [Context Lens](#context-lens) | 1.2.0 | Both | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
 
@@ -29,16 +27,14 @@ Then install the mods you want, one line each (press Enter for the user scope):
 ```
 /plugin install bare-view@teddymazrin-mods
 /plugin install control-panel@teddymazrin-mods
-/plugin install session-lens@teddymazrin-mods
-/plugin install session-meter@teddymazrin-mods
+/plugin install session-manager@teddymazrin-mods
 /plugin install action-items@teddymazrin-mods
 /plugin install guard-rails@teddymazrin-mods
-/plugin install context-handoff@teddymazrin-mods
 /plugin install context-lens@teddymazrin-mods
 /plugin install tenant-lens@teddymazrin-mods
 ```
 
-Run `/reload-plugins` to load them, or start a new session. Pick **session-lens** if you use Claude Code in a terminal and **session-meter** if you use the desktop app; you don't need both.
+Run `/reload-plugins` to load them, or start a new session.
 
 ## Bare View
 
@@ -55,7 +51,7 @@ A live task checklist above the prompt: the goal, a progress bar, each step and 
 
 ## Control Panel
 
-Shows as **◆ Control Panel** in the footer. The status row it used to draw under the prompt is now its own mod, [Session Lens](#session-lens).
+Shows as **◆ Control Panel** in the footer. The status row it used to draw under the prompt is now part of [Session Manager](#session-manager).
 
 Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
@@ -67,29 +63,28 @@ Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
   - **Reload plugins ▸ Run:** runs `/reload-plugins`
   - **Clear chat ▸ Run:** runs `/clear` after asking you to confirm
 
-## Session Lens or Session Meter?
+## Session Manager
 
-Both show how full your context is, how long the prompt cache stays warm, and how much of your plan you've used. They're built for different places:
+Everything about the session in one mod: what it costs, how full it is, and moving to a fresh chat before it gets slow and expensive. It replaced Session Lens, Session Meter and Context Handoff ([moving from them](#moving-from-session-lens-session-meter-and-context-handoff)).
 
-| | Session Lens | Session Meter |
+It shows itself where there's room, so the same install works in both places:
+
+| | Terminal | Desktop app |
 | --- | --- | --- |
-| **Use it in** | **The terminal** (`claude` in PowerShell, bash, etc.) | **The Claude desktop app** (Code tab) |
-| **Where it shows** | A full row under the prompt | A short line in the app's footer, bottom right |
-| **What it shows** | Plan, model, effort, context bar, cache, 5-hour and weekly limits with reset times | Context, cache and 5-hour usage |
-| **Why** | The terminal has room for a whole row under the prompt | The desktop app doesn't draw a mod's row under the prompt, so the footer is the one place a line fits |
+| **Session numbers** | A full row under the prompt | A short line in the footer, bottom right |
+| **Cold-cache box** | Above the prompt | Above the prompt |
+| **Handoff boxes, `/handoff`, the Handoff pane** | Yes | Yes |
 
-Install the one that matches where you work. Installing both does no harm: Session Lens's row simply doesn't appear in the desktop app.
+The desktop app doesn't draw a mod's row under the prompt, which is why it gets the shorter footer line instead.
 
-## Session Lens
-
-**For the terminal.** A status row under the prompt:
+### The row (terminal)
 
 ```
 Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | cache 42m | usage 6% · resets 4h12m | weekly 31% · resets Fri
 ```
 
 - **Subscription / API:** how this session is billed. **Subscription** is your Claude plan (usage comes out of its limits); **API** is an API key, Bedrock or Vertex (billed per token). It only shows this; it doesn't change it. It's worked out on your computer: Subscription once Claude Code reports plan usage limits, otherwise API if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, a Bedrock or Vertex setting, or a key in `~/.claude.json` is present. It only checks that a key exists; it never reads, stores or sends it
-- **Model** (`Opus 5.5`): the model your requests go out with: the one you picked in the panel, or what Claude Code last used
+- **Model** (`Opus 5.5`): the model your requests go out with: the one you picked in Control Panel, or what Claude Code last used
 - **Effort** (`effort Medium`): the reasoning effort your requests go out with, picked the same way
 - **Context** (`ctx ░░░░░░░░ 1%`): how full the conversation's context window is. Green under 50%, gold to 75%, orange above
 - **Cache** (`cache 42m`, in red): time until the prompt cache goes cold. While it's warm, your next message re-reads the conversation cheaply; once it shows `cache cold`, the next message re-sends the whole conversation at full price, so a long session is a good time to `/compact` or `/clear` first. Claude Code doesn't tell mods the cache lifetime, so it assumes the usual one: an hour on a subscription, five minutes on an API key, counted from Claude's last reply. Each model has its own cache, so after you switch models it shows `cache cold · new model` until the new model's first reply
@@ -99,23 +94,23 @@ Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | cach
 
 The model and effort come from your pick in [Control Panel](#control-panel) when it's installed.
 
-## Session Meter
+### The footer line (desktop app)
 
-**For the desktop app.** One short line in the footer, bottom right, beside the app's own buttons (and left of **◆ Control Panel** and **Azure Context** when those are installed):
+One short line beside the app's own buttons (and left of **◆ Control Panel** and **Azure Context** when those are installed):
 
 ```
 ctx 23% · cache 42m · 5h 6%
 ```
 
 - **ctx:** how full the conversation's context window is
-- **cache:** time until the prompt cache goes cold, as in Session Lens. After you switch models it reads `cache cold`, since the new model has no cache yet
+- **cache:** time until the prompt cache goes cold, as in the row. After you switch models it reads `cold · new model`
 - **5h:** how much of your plan's 5-hour usage limit you've used
 - **Colors:** each number turns gold and then orange as it climbs; the cache turns red in its last minutes
 - **Stays current:** redraws right after `/model` and every 10 seconds, so the countdown moves while you're idle
 
-## Cold-cache warning
+### Cold-cache box
 
-Both Session Lens (in the terminal) and Session Meter (in the desktop app) warn you when your next message will cost more. Whenever the prompt cache has gone cold, or you've switched models, whatever the chat's size, a box pops up above the prompt with an orange frame:
+Whenever the prompt cache has gone cold, or you've switched models, whatever the chat's size, a box pops up above the prompt with an orange frame:
 
 ```
 ╭──────────────────────────────────────────────────────────────────────────────────────────╮
@@ -125,10 +120,42 @@ Both Session Lens (in the terminal) and Session Meter (in the desktop app) warn 
 ╰──────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
-- **✎ Write handoff** runs `/handoff` (needs [Context Handoff](#context-handoff)); then **↻ Clear this chat & continue with note** starts a small fresh chat. That's the moment a handoff saves the most, and the bigger the chat the more the re-read costs
+- **✎ Write handoff** has Claude write the handoff note (below); then **↻ Clear this chat & continue with note** starts a small fresh chat. That's the moment a handoff saves the most, and the bigger the chat the more the re-read costs
 - **Keep going** or **✕** closes it. It comes back the next time the cache goes cold, after your next reply or another model switch
 - After a model switch the title reads **Cache cold · new model**
-- The status row and footer line stay short: they just say `cache cold` (or `cache cold · new model`)
+- The row and footer line stay short: they just say `cache cold` (or `cache cold · new model`)
+
+### Handoff
+
+Keeps a long session from getting slow, costly and forgetful. As a chat grows, every message uses more of your usage and Claude starts missing details; Session Manager tells you when, in plain words, and moves you to a fresh chat without losing your place.
+
+- **Reminders at 50%, 65% and 80% full:** a violet box above the prompt, more urgent each time. It stays until you click **✎ Write handoff** or **Not now** (or ✕):
+  - **50%:** *This chat is 50% full · Long chats use up more of your usage and Claude gets less sharp. Start fresh with a summary?*
+  - **65%:** *This chat is 65% full · Every message now costs more usage, and Claude may start missing details. Start fresh at your next break.*
+  - **80%:** *This chat is 80% full · Almost full: soon Claude shrinks the chat and forgets details, and each message costs the most usage. Start fresh now.*
+
+  Each shows once per chat, and again only after the chat shrinks below it (after a clear or a compact) and grows back. `/handoff ask 50`, `ask 65` or `ask 80` previews one
+- **`/handoff`** (or **✎ Write handoff**): Claude writes a handoff note for this session: the goal, what's done, what's in progress, next steps, key files, and decisions and gotchas. It opens in the Handoff pane; no file is written
+- **Two ways on**, in the pane (or in a box above the prompt when the window is narrow):
+  - **↻ Clear this chat & continue with note:** asks once, then clears this chat and sends the note as the fresh chat's first message. Claude sums up where things stand and waits for you to confirm the next step
+  - **⧉ Copy & continue in a new chat:** copies the note with that same request, to paste into a new chat; this chat stays as it is
+- **`/handoff open`:** shows this session's note again without writing a new one. It's the note as it was written, so after more work run `/handoff` again for an up-to-date one. Notes are never saved: a new chat starts with none
+
+The usual flow: when a box appears, click **✎ Write handoff**, then **↻ Clear this chat & continue with note**.
+
+### Moving from Session Lens, Session Meter and Context Handoff
+
+Those three have been removed from the marketplace. Session Manager is a new install, not an update. In a regular terminal:
+
+```
+claude plugin marketplace update teddymazrin-mods
+claude plugin install session-manager@teddymazrin-mods
+claude plugin uninstall session-lens@teddymazrin-mods
+claude plugin uninstall session-meter@teddymazrin-mods
+claude plugin uninstall context-handoff@teddymazrin-mods
+```
+
+Uninstall only the ones you have. Then run `/reload-plugins`. A handoff note from the old mod doesn't carry over; run `/handoff` for a new one.
 
 ## Action Items
 
@@ -182,24 +209,6 @@ It asks about:
 Commands are checked in both Bash and PowerShell. A blocked call tells Claude not to retry or work around it, and shows a toast. If the question is dismissed, or nobody can answer it (`claude -p`), the call is blocked.
 
 `/guard-rails` lists the last 20 calls it stopped or let through, newest first.
-
-## Context Handoff
-
-Keeps a long session from getting slow, costly and forgetful. As a chat grows, every message uses more of your usage and Claude starts missing details; Context Handoff tells you when, in plain words, and moves you to a fresh chat without losing your place.
-
-- **Reminders at 50%, 65% and 80% full:** a violet box above the prompt, more urgent each time. It stays until you click **✎ Write handoff** or **Not now** (or ✕):
-  - **50%:** *This chat is 50% full · Long chats use up more of your usage and Claude gets less sharp. Start fresh with a summary?*
-  - **65%:** *This chat is 65% full · Every message now costs more usage, and Claude may start missing details. Start fresh at your next break.*
-  - **80%:** *This chat is 80% full · Almost full: soon Claude shrinks the chat and forgets details, and each message costs the most usage. Start fresh now.*
-
-  Each shows once per chat, and again only after the chat shrinks below it (after a clear or a compact) and grows back. `/handoff ask 50`, `ask 65` or `ask 80` previews one
-- **`/handoff`** (or **✎ Write handoff**): Claude writes a handoff note for this session: the goal, what's done, what's in progress, next steps, key files, and decisions and gotchas. It opens in the Handoff pane; no file is written
-- **Two ways on**, in the pane (or in a box above the prompt when the window is narrow):
-  - **↻ Clear this chat & continue with note:** asks once, then clears this chat and sends the note as the fresh chat's first message. Claude sums up where things stand and waits for you to confirm the next step
-  - **⧉ Copy & continue in a new chat:** copies the note with that same request, to paste into a new chat; this chat stays as it is
-- **`/handoff open`:** shows this session's note again without writing a new one. It's the note as it was written, so after more work run `/handoff` again for an up-to-date one. Notes are never saved: a new chat starts with none
-
-The usual flow: when a box appears, click **✎ Write handoff**, then **↻ Clear this chat & continue with note**.
 
 ## Tenant Lens
 
@@ -276,11 +285,9 @@ Run these in a regular terminal (PowerShell, bash). Don't run them at the Claude
 claude plugin marketplace update teddymazrin-mods
 claude plugin update bare-view@teddymazrin-mods
 claude plugin update control-panel@teddymazrin-mods
-claude plugin update session-lens@teddymazrin-mods
-claude plugin update session-meter@teddymazrin-mods
+claude plugin update session-manager@teddymazrin-mods
 claude plugin update action-items@teddymazrin-mods
 claude plugin update guard-rails@teddymazrin-mods
-claude plugin update context-handoff@teddymazrin-mods
 claude plugin update context-lens@teddymazrin-mods
 claude plugin update tenant-lens@teddymazrin-mods
 ```

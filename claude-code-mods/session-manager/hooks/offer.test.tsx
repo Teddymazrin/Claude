@@ -1,9 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { parseAsk } from './register'
+import { parseAsk } from './handoff'
 
 const BAND = {
-  plugin: 'context-handoff',
+  plugin: 'session-manager',
   component: 'AbovePrompt',
   props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 80, scroll: { bodyRows: 19 } },
   viewport: { columns: 84, rows: 40 },
