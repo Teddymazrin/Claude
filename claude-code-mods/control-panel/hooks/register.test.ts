@@ -23,10 +23,10 @@ test('names the model and effort the next request uses', () => {
   expect(chipText()).toBe('◆ Control Panel')
 })
 
-test('applies only the overrides that are set', () => {
+test('applies the effort pick; the model is switched with /model, never overridden per request', () => {
   const req = { model: 'claude-sonnet-5-5', effort: 'medium' }
   expect(applyChoice(req, { model: null, effort: null })).toEqual(req)
-  expect(applyChoice(req, { model: 'claude-opus-5-5', effort: 'max' })).toEqual({ model: 'claude-opus-5-5', effort: 'max' })
+  expect(applyChoice(req, { model: 'claude-opus-5-5', effort: 'max' })).toEqual({ model: 'claude-sonnet-5-5', effort: 'max' })
 })
 
 test('formats headings, names and descriptions', () => {

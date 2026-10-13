@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.0.1 (2026-10-13)
+
+**Asked for:** in the desktop app, the numbers crowded Control Panel's button out of the footer, and Bare View's checklist must stay the lowest box above the prompt.
+
+**What changed:** the app's footer shows just the cache (`cache 59m` / `cache cold`) as a button left of Control Panel; pressing it shows the full row. A line above the prompt was tried and dropped, since it sat under Bare View's checklist. The model is now the session's own (what `/model` and the app's menu set); Control Panel's old model override is ignored. The screen redraws every 2 seconds, so a switch in the app's model menu shows within moments.
+
 ## 1.0.0 (2026-10-13)
 
 **Asked for:** one mod instead of three. Session Lens and Session Meter were the same meter split by where it runs, and the cold-cache box already relied on Context Handoff's `/handoff`.

@@ -2,9 +2,14 @@ import { expect, test } from 'claude-code/testing'
 
 import { COLD_WHY, coldKey, coldTitle } from './cold'
 import { baseModel, cacheColor, cacheText, cacheTtlMs, meterBar, modelName, nextRequest, pickLimit, pickWeek, resetText, untilReset } from './session'
-import { footerPieces, statusText } from './status'
+import { cacheLabel, footerPieces, footerText, statusText } from './status'
 
 const FOOTER = { component: 'SessionMode', viewport: { columns: 100, rows: 40 }, props: { modes: [] } } as const
+const ABOVE = {
+  component: 'AbovePrompt',
+  viewport: { columns: 84, rows: 40 },
+  props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 80, scroll: { bodyRows: 19 } },
+} as const
 
 test('draws the context bar and the time to the usage reset', () => {
   expect(meterBar(1)).toEqual({ filled: '', empty: '░░░░░░░░' })
@@ -55,6 +60,7 @@ test('the app footer line: context, cache, 5-hour', () => {
   expect(footerPieces(m, 'cache 42m').map(p => `${p.label} ${p.value}`).join(' · ')).toBe('ctx 12% · cache 42m · 5h 1%')
   expect(footerPieces(m, 'cache cold · new model').find(p => p.key === 'cache')?.value).toBe('cold · new model')
   expect(footerPieces({ plan: null, context: null, limit: null, week: null }, '').map(p => p.value)).toEqual(['…'])
+  expect(footerText(footerPieces(m, 'cache cold'))).toBe('ctx 12% · cache cold · 5h 1%')
 })
 
 test('counts down to the prompt cache going cold, and a new model starts cold', () => {
@@ -83,27 +89,33 @@ test('the cold-cache box says what it costs, once per cold spell', () => {
   expect(coldKey(last, 'claude-opus-5-5')).not.toBe(coldKey({ ...last, at: 2000 }, 'claude-opus-5-5'))
 })
 
-test("the next request: Control Panel's pick, else the session's model (/model), else what was sent", () => {
+test("the next request: the session's model (/model, the app's picker), else what was sent; Control Panel's effort", () => {
   expect(nextRequest(undefined, null)).toEqual({ model: null, effort: null })
   expect(nextRequest(undefined, null, 'claude-sonnet-5-5')).toEqual({ model: 'claude-sonnet-5-5', effort: null })
   expect(nextRequest(undefined, { model: 'claude-opus-5-5', effort: 'high' })).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
   // After /model the session's model is already the new one; what was sent is still the old one.
   expect(nextRequest(undefined, { model: 'claude-opus-5-5', effort: 'high' }, 'claude-sonnet-5-5')).toEqual({ model: 'claude-sonnet-5-5', effort: 'high' })
-  expect(nextRequest({ model: 'claude-fable-5-1', effort: null }, { model: 'claude-opus-5-5', effort: 'high' })).toEqual({ model: 'claude-fable-5-1', effort: 'high' })
+  // A model pick Control Panel saved before it switched with /model no longer wins; its effort pick still does.
+  expect(nextRequest({ model: 'claude-fable-5-1', effort: 'max' }, { model: 'claude-opus-5-5', effort: 'high' }, 'claude-opus-5-5')).toEqual({
+    model: 'claude-opus-5-5',
+    effort: 'max',
+  })
   expect(modelName('claude-haiku-5-5')).toBe('Haiku 5.5')
 })
 
-test('the footer line shows in the app as plain text, not in the terminal', async ($, on) => {
+test('in the app the footer shows just the cache; nothing above the prompt, nothing in the terminal footer', async ($, on) => {
+  expect(cacheLabel('cache cold · new model')).toBe('cache cold')
+  expect(cacheLabel('cache 59m')).toBe('cache 59m')
   on('clock.now', () => ({ value: 5_000 }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  const app = await $.ui.mount({ plugin: 'session-manager', surface: 'desktop', ...FOOTER } as never)
-  expect(await app.find({ key: 'session-manager-footer' })).toBeDefined()
-  expect(await app.find({ type: 'Text', text: /ctx/ })).toBeDefined()
-  expect(await app.find({ type: 'Button' })).toBeUndefined()
-
+  // Before Claude's first reply there's no cache to show.
+  const footer = await $.ui.mount({ plugin: 'session-manager', surface: 'desktop', ...FOOTER } as never)
+  expect(await footer.find({ key: 'session-manager-cache' })).toBeUndefined()
+  const above = await $.ui.mount({ plugin: 'session-manager', surface: 'desktop', ...ABOVE } as never)
+  expect(await above.find({ key: 'session-manager-line' })).toBeUndefined()
   const terminal = await $.ui.mount({ plugin: 'session-manager', surface: 'terminal', ...FOOTER } as never)
-  expect(await terminal.find({ key: 'session-manager-footer' })).toBeUndefined()
+  expect(await terminal.find({ key: 'session-manager-cache' })).toBeUndefined()
 })

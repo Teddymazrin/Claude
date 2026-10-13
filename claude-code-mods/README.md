@@ -5,8 +5,8 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | Mod | Latest | Works in | What it does |
 | --- | --- | --- | --- |
 | [Bare View](#bare-view) | 1.15.1 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
-| [Control Panel](#control-panel) | 1.12.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Session Manager](#session-manager) | 1.0.0 | Both | Plan, model, context, cache and usage (a row in the terminal, a footer line in the app); a box when the cache goes cold; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
+| [Control Panel](#control-panel) | 1.13.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
+| [Session Manager](#session-manager) | 1.0.1 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
 | [Action Items](#action-items) | 6.4.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
@@ -55,7 +55,7 @@ Shows as **◆ Control Panel** in the footer. The status row it used to draw und
 
 Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
-- **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`)
+- **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`). The pick goes in the prompt box as `/model <name>`; press Enter to switch. It's the same as typing `/model` yourself, so the app's own model menu changes too (a mod can't send it for you)
 - **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
 - **Settings:** switch **Bare View** and **Guard Rails** on or off. The switch is saved straight away, and one `/reload-plugins` runs 1.5 seconds after your last click, so flipping both quickly applies them at once. The other mods have no switch and always stay on
 - **Actions:** one row each, at the bottom of the panel:
@@ -71,11 +71,11 @@ It shows itself where there's room, so the same install works in both places:
 
 | | Terminal | Desktop app |
 | --- | --- | --- |
-| **Session numbers** | A full row under the prompt | A short line in the footer, bottom right |
+| **Session numbers** | A full row under the prompt | Just the cache time, in the footer left of Control Panel |
 | **Cold-cache box** | Above the prompt | Above the prompt |
 | **Handoff boxes, `/handoff`, the Handoff pane** | Yes | Yes |
 
-The desktop app doesn't draw a mod's row under the prompt, which is why it gets the shorter footer line instead.
+The desktop app doesn't draw a mod's row under the prompt, and its footer only fits about one button beside Control Panel, so the app shows just the cache. Bare View's checklist stays the lowest box above the prompt.
 
 ### The row (terminal)
 
@@ -92,21 +92,19 @@ Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | cach
 - **Weekly** (`weekly 31% · resets Fri`): the same for the 7-day limit. The reset shows as a weekday, or as a countdown once it's under a day away
 - Both show on a subscription once Claude Code reports them. Each percentage turns gold at 50% and orange at 75%
 
-The model and effort come from your pick in [Control Panel](#control-panel) when it's installed.
+The model is the session's own (what `/model` and the app's model menu set); the effort is your pick in [Control Panel](#control-panel) when there is one.
 
-### The footer line (desktop app)
+### The footer (desktop app)
 
-One short line beside the app's own buttons (and left of **◆ Control Panel** and **Azure Context** when those are installed):
+Just the cache, left of **◆ Control Panel**:
 
 ```
-ctx 23% · cache 42m · 5h 6%
+cache 59m   ◆ Control Panel   Opus 5.5
 ```
 
-- **ctx:** how full the conversation's context window is
-- **cache:** time until the prompt cache goes cold, as in the row. After you switch models it reads `cold · new model`
-- **5h:** how much of your plan's 5-hour usage limit you've used
-- **Colors:** each number turns gold and then orange as it climbs; the cache turns red in its last minutes
-- **Stays current:** redraws right after `/model` and every 10 seconds, so the countdown moves while you're idle
+- It reads `cache 59m`, then `cache cold` once it has gone cold or after you switch models
+- Click it to see the full row (plan, model, effort, context, 5-hour and weekly usage) as a pop-up message
+- Stays current: redraws every 2 seconds, so a switch in the app's model menu shows within moments
 
 ### Cold-cache box
 
@@ -123,7 +121,7 @@ Whenever the prompt cache has gone cold, or you've switched models, whatever the
 - **✎ Write handoff** has Claude write the handoff note (below); then **↻ Clear this chat & continue with note** starts a small fresh chat. That's the moment a handoff saves the most, and the bigger the chat the more the re-read costs
 - **Keep going** or **✕** closes it. It comes back the next time the cache goes cold, after your next reply or another model switch
 - After a model switch the title reads **Cache cold · new model**
-- The row and footer line stay short: they just say `cache cold` (or `cache cold · new model`)
+- The row and the footer stay short: they just say `cache cold` (or `cache cold · new model`)
 
 ### Handoff
 

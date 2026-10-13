@@ -116,11 +116,13 @@ export const cacheColor = (cache: string) => {
 }
 
 /**
- * What the next request goes out with: Control Panel's pick where set, else the session's model (which `/model`
- * changes straight away), else what was last sent. The last-sent model only changes on the next request, so
+ * What the next request goes out with: the session's model (which `/model` and the app's picker change straight
+ * away), else what was last sent; the effort is Control Panel's pick where set, else what was last sent. The last-sent model only changes on the next request, so
  * putting it first hid a `/model` switch, and with it the cold cache it causes.
  */
 export const nextRequest = (pick: Pick | undefined, s: Seen | null, sessionModel?: string) => ({
-  model: pick?.model ?? sessionModel ?? s?.model ?? null,
+  // Control Panel switches the model with /model, so the session's own model is the one; a model pick it saved
+  // before it did that is ignored.
+  model: sessionModel ?? s?.model ?? null,
   effort: pick?.effort ?? s?.effort ?? null,
 })

@@ -28,5 +28,11 @@ export const footerPieces = (m: Meter, cache: string): Piece[] => {
   return pieces
 }
 
+/** The footer line as one label: `ctx 40% · cache cold · 5h 14%`. */
+export const footerText = (pieces: Piece[]) => pieces.map(p => `${p.label} ${p.value}`).join(' · ')
+
+/** The app's footer button: just the cache, `cache 59m` or `cache cold` (a model switch fits no more). */
+export const cacheLabel = (cache: string) => cache.replace(/ · new model$/, '')
+
 /** A usage window's percent: plain under half, gold to 75%, orange above. */
 export const limitColor = (percent: number) => (percent >= 75 ? ORANGE : percent >= 50 ? GOLD : undefined)

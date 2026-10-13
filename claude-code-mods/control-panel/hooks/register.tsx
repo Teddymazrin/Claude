@@ -12,6 +12,8 @@ const RELOAD = 'reload-plugins'
 export const RELOAD_DELAY_MS = 1500
 // The dock width the pane asks for, and the width from which rows show their blurbs.
 const PANE_COLUMNS = 46
+// How long a model pick waits before sending /model, so it goes out after the button press has finished.
+const SEND_DELAY_MS = 300
 const WIDE_COLUMNS = 64
 // The longest blurb: the narrow pane less its padding, so a blurb never truncates.
 export const BLURB_MAX = PANE_COLUMNS - 4
@@ -80,10 +82,9 @@ export const currentText = (c: Choice, s: Seen | null) => {
 
 export const chipText = () => `◆ ${TITLE}`
 
-/** The request as it should be sent: the override where one is set, the engine's otherwise. */
+/** The request as it should be sent: the effort pick where one is set. The model is the session's own (see pick). */
 export const applyChoice = <T extends { model: string; effort?: unknown }>(e: T, c: Choice): T => ({
   ...e,
-  ...(c.model ? { model: c.model } : {}),
   ...(c.effort ? { effort: c.effort } : {}),
 })
 
@@ -311,8 +312,25 @@ async function runQuick($: EngineInterface, quick: (typeof QUICK)[number]) {
   await $.command.run({ command: quick.command }).catch(() => $.ui.toast(`Couldn't run /${quick.command} · type it at the prompt`))
 }
 
+// A model pick sends `/model <id>` as if you typed it, so the app's own model menu, the footer and every other mod
+// agree. Run as a mod command instead, the desktop app only set a hidden "this session only" model and kept its
+// menu's. Only the effort is kept as a pick and applied to each request.
 async function pick($: EngineInterface, patch: Partial<Choice>) {
-  const next = { ...(await read($, choice)), ...patch }
+  if (patch.model) {
+    const id = patch.model
+    // After the press has finished: sent from inside the button's own handler, the app refuses it. If it still
+    // refuses, the command goes in the prompt box and one Enter sends it.
+    $.clock.after(SEND_DELAY_MS, () => {
+      $.prompt
+        .submit({ text: `/model ${id}` })
+        .then(() => $.ui.invalidate('ui.render'))
+        .catch(async () => {
+          const filled = await $.prompt.fill({ text: `/model ${id}` }).catch(() => undefined)
+          $.ui.toast(filled?.isFilled ? 'Press Enter to switch the model' : `Couldn't switch the model · type /model ${id}`)
+        })
+    })
+  }
+  const next = { ...(await read($, choice)), ...patch, model: null }
   await update($, choice, () => next)
   await $.store.set('choice', next)
 }
@@ -354,7 +372,8 @@ export const register: Register = on => {
     // that loaded before Control Panel and so slipped past plugin.register.
     if (!(await read($, booted))) {
       await update($, booted, () => true)
-      if (saved) await update($, choice, () => ({ model: saved.model ?? null, effort: saved.effort ?? null }))
+      // A model pick saved by an earlier version is dropped: the model is switched with /model now.
+      if (saved) await update($, choice, () => ({ model: null, effort: saved.effort ?? null }))
       for (const mod of await read($, mods)) if (off.includes(mod.name)) await poke($, mod).catch(() => {})
     }
 
@@ -413,8 +432,8 @@ export const register: Register = on => {
     const s = await read($, seen)
     // What the session can run now: a folder remembered from an earlier session doesn't count.
     const commands = (await $.command.list().catch(() => [])).map(command => command.name)
-    // With no pick yet, what the engine last sent is the one lit.
-    const model = c.model ?? s?.model
+    // The session's own model is the one lit (it's what /model and the app's picker change); else what was last sent.
+    const model = (await $.session.model().catch(() => undefined)) ?? s?.model
     const effort = c.effort ?? s?.effort
 
     // An option in a row: filled with `fill` when chosen, plain otherwise.

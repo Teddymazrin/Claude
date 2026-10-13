@@ -31,6 +31,7 @@ import {
   ORANGE,
   RED,
   SLATE,
+  cacheColor,
   cacheText,
   cacheTtlMs,
   effortName,
@@ -44,7 +45,7 @@ import {
   resetText,
 } from './session'
 import type { Pick } from './session'
-import { footerPieces, limitColor } from './status'
+import { cacheLabel, limitColor, statusText } from './status'
 
 // Session Manager: the status row (terminal) and footer line (app), the cold-cache box, and handoff.
 // Everything that touches $ is in this one file: the engine follows $ only into functions declared here.
@@ -317,13 +318,13 @@ async function coldBox($: EngineInterface, e: Surface) {
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
 export const register: Register = on => {
-  // Session start: the first measure, a redraw every 10 seconds (so the cache countdown, the cold-cache box and a
-  // model switch show while idle), and the handoff tool and command.
+  // Session start: the first measure, a redraw every 2 seconds (so the cache countdown, the cold-cache box and a
+  // switch in the app's model menu, which no hook hears, show within moments), and the handoff tool and command.
   on('session.start', async ($, e, next) => {
     const usage = await $.session.usage().catch(() => undefined)
     await measure($, usage?.context.percent, usage?.rateLimits ?? []).catch(() => {})
     tick?.cancel()
-    tick = $.clock.every(10_000, () => {
+    tick = $.clock.every(2_000, () => {
       $.ui.invalidate('ui.render')
     })
     await startHandoff($)
@@ -348,6 +349,34 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {cold}
         {handoff}
+        {below}
+      </Box>
+    )
+  }).catch(($, e, next) => next(e))
+
+  // Desktop app: just the cache, `cache 59m` or `cache cold`, left of Control Panel in the footer. The footer's
+  // one spot has no room for more. A Button, like Control Panel's chip: the app lays its buttons out in order, while
+  // plain text ended up after them and cut short. Pressing it shows the full row as a toast.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const below = await next(e)
+    if (e.surface === 'terminal') return below
+    const { m, model, effort, now, cache } = await snapshot($)
+    if (!cache) return below
+    const { Box, Button } = $.ui.resolve(e)
+    const mine = (
+      <Box key="session-manager-cache" flexShrink={0} marginRight={1}>
+        <Button
+          key="session-manager-cache-button"
+          plain
+          label={cacheLabel(cache)}
+          hover={{ bold: true }}
+          onPress={() => $.ui.toast(statusText(m, model, effort, now, cache), { timeoutMs: 8000 })}
+        />
+      </Box>
+    )
+    return (
+      <Box flexDirection="row" alignItems="flex-end">
+        {mine}
         {below}
       </Box>
     )
@@ -431,43 +460,6 @@ export const register: Register = on => {
       </Box>
     )
   })
-
-  // Desktop app: one line of colored text in the footer, left of the app's own buttons.
-  // Plain Text, no Button: the app draws a Button natively from its label alone, dropping colored children.
-  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
-    const below = await next(e)
-    if (e.surface === 'terminal') return below
-    const { Box, Text } = $.ui.resolve(e)
-    const { m, cache } = await snapshot($)
-    const pieces = footerPieces(m, cache)
-
-    const mine = (
-      <Box key="session-manager-footer" flexDirection="row" flexShrink={0}>
-        {pieces.flatMap((p, i) => [
-          i > 0 ? <Text key={`sep-${p.key}`} color={MUTED}> · </Text> : null,
-          <Text key={`label-${p.key}`} color={MUTED}>{`${p.label} `}</Text>,
-          <Text key={`value-${p.key}`} color={p.color}>{p.value}</Text>,
-        ])}
-      </Box>
-    )
-
-    const isEngine = 'type' in below && below.type === 'engine'
-    // Another mod's chip is beneath: sit to its left, on the same line.
-    if (!isEngine)
-      return (
-        <Box flexDirection="row" alignItems="flex-end">
-          <Box marginRight={2}>{mine}</Box>
-          {below}
-        </Box>
-      )
-    // The engine's modes are beneath: keep them beside it.
-    return (
-      <Box flexDirection="row" alignItems="flex-end">
-        {mine}
-        {e.props.modes.length > 0 ? <Box marginLeft={2}>{below}</Box> : null}
-      </Box>
-    )
-  }).catch(($, e, next) => next(e))
 
 
   // Claude hands the note over: held for this session only, and shown. Nothing is saved.
