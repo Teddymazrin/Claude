@@ -313,14 +313,13 @@ async function runQuick($: EngineInterface, quick: (typeof QUICK)[number]) {
 }
 
 // A model pick sends `/model <id>` as if you typed it, so the app's own model menu, the footer and every other mod
-// agree. Run as a mod command instead, the desktop app only set a hidden "this session only" model and kept its
-// menu's. Only the effort is kept as a pick and applied to each request.
+// agree. In the terminal it runs as a mod command and switches straight away. The desktop app only sets a hidden
+// "this session only" model from a mod command and keeps its menu's, so there it goes through the prompt.
+// Only the effort is kept as a pick and applied to each request.
 async function pick($: EngineInterface, patch: Partial<Choice>) {
   if (patch.model) {
     const id = patch.model
-    // After the press has finished: sent from inside the button's own handler, the app refuses it. If it still
-    // refuses, the command goes in the prompt box and one Enter sends it.
-    $.clock.after(SEND_DELAY_MS, () => {
+    const viaPrompt = () =>
       $.prompt
         .submit({ text: `/model ${id}` })
         .then(() => $.ui.invalidate('ui.render'))
@@ -328,6 +327,15 @@ async function pick($: EngineInterface, patch: Partial<Choice>) {
           const filled = await $.prompt.fill({ text: `/model ${id}` }).catch(() => undefined)
           $.ui.toast(filled?.isFilled ? 'Press Enter to switch the model' : `Couldn't switch the model · type /model ${id}`)
         })
+    const inApp = (await $.session.surfaces().catch(() => [])).some(s => s !== 'terminal')
+    // After the press has finished: sent from inside the button's own handler, it is refused. If the prompt still
+    // refuses, the command goes in the prompt box and one Enter sends it.
+    $.clock.after(SEND_DELAY_MS, () => {
+      if (inApp) return viaPrompt()
+      $.command
+        .run({ command: 'model', args: id })
+        .then(() => $.ui.invalidate('ui.render'))
+        .catch(viaPrompt)
     })
   }
   const next = { ...(await read($, choice)), ...patch, model: null }

@@ -1,5 +1,11 @@
 # Control Panel log
 
+## 1.13.1 (2026-10-13)
+
+**Found in use:** in the terminal, a model pick used to switch straight away; since 1.13.0 it only filled the prompt box, like the desktop app.
+
+**What changed:** in the terminal a model pick runs `/model <name>` itself and switches at once. The desktop app keeps 1.13.0's prompt-box way; if the terminal run is refused, it falls back to that too.
+
 ## 1.13.0 (2026-10-13)
 
 **Found in use:** in the desktop app, a model pick never changed the app's model: it was a hidden override on every message, and anything picked in the app's own menu was replaced by it.
