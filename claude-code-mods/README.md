@@ -6,7 +6,7 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | --- | --- | --- | --- |
 | [Bare View](#bare-view) | 1.15.2 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.14.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Session Manager](#session-manager) | 1.1.5 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
+| [Session Manager](#session-manager) | 1.1.6 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; writes a handoff note by itself before the cache runs out while you're away; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
 | [Action Items](#action-items) | 6.4.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
@@ -47,6 +47,7 @@ A live task checklist above the prompt: the goal, a progress bar, each step and 
 - **Errors vs failures:** a tool call that errors (a missing file, a search with no match, a check Claude re-runs) is only counted, dim: `· 1 error`. A step only shows a pink `✗` and reads **Failed** when Claude marks it failed because its result really didn't happen, such as a rejected push or tests that still fail; the folded line then reads `✗ 3 done · 1 step failed · …`, with each failed step and why under it (`✗ Push to main: GitHub rejected the push`), and opened out the reason sits under the step. Whenever a call errored, Claude's final answer says in one line whether it affected the result
 - **Tally:** a line counts the tool calls behind each prompt, split into built-in and MCP: `⚙ 4 tool calls · ▸ Built-in: 3 · ▸ MCP: 1`. Click a group to list the tools it ran under the line (`› Bash 2`, `› microsoft-learn › microsoft_docs_search 1`), and click again to fold it back up
 - **Peek at a step:** a step that has made tool calls shows a count at the end of its row (`▸3`). Click the step to list its calls under it. Each shows the tool (`server › tool` for MCP), what it did (the command, file or search), how long it took, and the first line it returned underneath. A call that errored is marked with an orange `!` and the line that says what went wrong underneath (`fatal: Needed a single revision (exit 128)`), not just the exit code. Click again to hide them. The newest 8 show, with a count of the earlier ones
+- **The answer always shows:** if Claude forgets to tick off the last step, its final answer still shows once the turn ends; working text from earlier in the turn stays hidden
 - **`/checklist`:** switches the full view back on, and off again
 
 ## Control Panel
@@ -56,7 +57,7 @@ Shows as **◆ Control Panel** in the footer. The status row it used to draw und
 Click **◆ Control Panel** (or run `/control-panel`) to open the panel:
 
 - **Model:** pick Haiku, Sonnet, Opus, Opus 1M or Fable (keys `1`-`5`). It's the same as typing `/model <name>` yourself, so the model really changes everywhere. In the terminal it switches straight away. In the desktop app the pick goes in the prompt box; press Enter to switch, so the app's own model menu changes too (a mod can't send it for you there)
-- **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`)
+- **Effort:** pick Low, Medium, High, XHigh or Max (keys `l`, `m`, `h`, `x`, `z`). It's the same as typing `/effort <level>` yourself, so the effort really changes, and `/effort` and the panel always agree. In the terminal it switches straight away; in the desktop app the pick goes in the prompt box and Enter switches it
 - **Settings:** switch **Bare View** and **Guard Rails** on or off. The switch is saved straight away, and one `/reload-plugins` runs 1.5 seconds after your last click, so flipping both quickly applies them at once. The other mods have no switch and always stay on
 - **Actions:** one row each, at the bottom of the panel:
   - **Context Lens ▸ Open:** closes the panel and opens Context Lens in front. Shows only while Context Lens is installed and on
@@ -85,14 +86,14 @@ Subscription | Opus 5.5 | effort Medium | ctx ░░░░░░░░ 1% | cach
 
 - **Subscription / API:** how this session is billed. **Subscription** is your Claude plan (usage comes out of its limits); **API** is an API key, Bedrock or Vertex (billed per token). It only shows this; it doesn't change it. It's worked out on your computer: Subscription once Claude Code reports plan usage limits, otherwise API if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, a Bedrock or Vertex setting, or a key in `~/.claude.json` is present. It only checks that a key exists; it never reads, stores or sends it
 - **Model** (`Opus 5.5`): the model your requests go out with: the one you picked in Control Panel, or what Claude Code last used
-- **Effort** (`effort Medium`): the reasoning effort your requests go out with, picked the same way
+- **Effort** (`effort Medium`): the reasoning effort your requests go out with, as `/effort` or Control Panel set it
 - **Context** (`ctx ░░░░░░░░ 1%`): how full the conversation's context window is. Green under 50%, gold to 75%, orange above
 - **Cache** (`cache 42m`, in red): time until the prompt cache goes cold. While it's warm, your next message re-reads the conversation cheaply; once it shows `cache cold`, the next message re-sends the whole conversation at full price, so a long session is a good time to `/compact` or `/clear` first. Claude Code doesn't tell mods the cache lifetime, so it assumes the usual one: an hour on a subscription, five minutes on an API key, counted from Claude's last reply. Each model has its own cache, so after you switch models it shows `cache cold · new model` until the new model's first reply
 - **Usage** (`usage 6% · resets 4h12m`): how much of your plan's rolling 5-hour usage limit you've used, and the time until it resets
 - **Weekly** (`weekly 31% · resets Fri`): the same for the 7-day limit. The reset shows as a weekday, or as a countdown once it's under a day away
 - Both show on a subscription once Claude Code reports them. Each percentage turns gold at 50% and orange at 75%
 
-The model is the session's own (what `/model` and the app's model menu set); the effort is your pick in [Control Panel](#control-panel) when there is one.
+The model and effort are the session's own: what `/model`, `/effort`, the app's model menu or [Control Panel](#control-panel) set.
 
 ### The footer (desktop app)
 
@@ -119,10 +120,31 @@ Whenever the prompt cache has gone cold, or you've switched models, whatever the
 ```
 
 - **After a model switch**, it reads *Sonnet 5.5 hasn't read this chat yet, so your next message sends all of it again at full price and uses more of your usage. Opus 5.5 still has it saved.* and the button is **↩ Switch back to Opus 5.5** (click, then Enter). It shows on every switch, as long as the old model's cache is still warm
-- **✎ Write handoff** has Claude write the handoff note (below); then **↻ Clear this chat & continue with note** starts a small fresh chat. That's the moment a handoff saves the most, and the bigger the chat the more the re-read costs
+- **✎ Write handoff** has Claude write the handoff note ([Handoff](#handoff)); then **↻ Clear this chat & continue with note** starts a small fresh chat. That's the moment a handoff saves the most, and the bigger the chat the more the re-read costs
 - **Keep going** or **✕** closes it. It comes back the next time the cache goes cold, after your next reply or another model switch
 - After a model switch the title reads **Cache cold · new model**
 - The row and the footer stay short: they just say `cache cold` (or `cache cold · new model`)
+
+### Note before the cache goes cold
+
+Once the cache has gone cold, writing a handoff note re-reads the whole chat at full price, the very cost it's meant to avoid. So when you step away, Session Manager writes the note for you while the chat is still cheap to read:
+
+- **When:** about 5 minutes before the cache runs out (about 55 minutes after Claude's last reply on a subscription), once per break
+- **Only if it's worth it:** the chat is at least 20% full, no reply is running, and you haven't switched models. Never on an API key, where the cache lasts only 5 minutes
+- **How:** one background request that reads the saved chat and adds nothing to it. Reading it also keeps the cache warm, so you get about another hour
+- **Where it shows:** the note opens in the Handoff pane on the right (on a narrow terminal, **▸ Open** in the box opens it). If you're back before the cache runs out, that's all: keep chatting at the cached price. Once it has run out, an orange box appears above the prompt instead of the cold-cache box:
+
+```
+╭──────────────────────────────────────────────────────────────────────────────────────────╮
+│ ◈ Cache ran out while you were away · here is your handoff note                       ✕  │
+│ Written at 12:58 PM, before the cache expired. Continue in a new chat from it to skip    │
+│ re-reading this one at full price.                                                       │
+│ [⧉ Copy & continue in a new chat] [▸ Open] [Keep going]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+  It stays until you close it or send a message. The note lives only in this session: closing Claude Code loses it
+- **`/handoff away`:** writes the note now and shows that box, to see it without waiting an hour
 
 ### Handoff
 

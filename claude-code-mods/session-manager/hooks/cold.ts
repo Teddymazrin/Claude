@@ -54,4 +54,4 @@ export const AWAY_TITLE = 'Cache ran out while you were away · here is your han
 
 /** The away box's line under the title. */
 export const awayWhy = (when: string) =>
-  `Written at ${when}, before the cache expired. Copy prompt and paste it in a new chat to skip re-reading this one at full price.`
+  `Written at ${when}, before the cache expired. Continue in a new chat from it to skip re-reading this one at full price.`

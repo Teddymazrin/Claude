@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.1.6 (2026-10-18)
+
+**Found:** the away box's line said "Copy prompt", but its button reads **⧉ Copy & continue in a new chat**.
+
+**What changed:** the line now reads "Continue in a new chat from it to skip re-reading this one at full price."
+
 ## 1.1.5 (2026-10-18)
 
 **Asked for:** the away box only when the cache has actually run out; back while the chat is still saved, there's nothing to warn about.
