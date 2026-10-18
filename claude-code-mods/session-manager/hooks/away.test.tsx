@@ -52,7 +52,10 @@ test('away for an hour: the note is written from the cache once, and the box say
 
   const ui = await $.ui.mount({ ...ABOVE, surface: 'terminal' } as never)
   expect(await ui.find({ type: 'Text', text: 'You were away · a handoff note is ready' })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: 'Ship the fix' })).toBeTruthy()
+  // Just the message and the ways on: the note itself is in the pane.
+  expect(await ui.find({ type: 'Text', text: 'Ship the fix' })).toBeFalsy()
+  expect(await ui.find({ key: 'away-continue' })).toBeFalsy()
+  for (const key of ['away-copy', 'away-open', 'away-keep']) expect(await ui.find({ key })).toBeTruthy()
   await ui.unmount()
 
   // Reading the cache kept it warm for another hour; past that, the box says it ran out.

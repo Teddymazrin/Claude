@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.1.4 (2026-10-18)
+
+**Asked for:** none of the note in the away box, and no Continue option: just the message and Copy prompt / Open / Keep going.
+
+**What changed:** the away box is now its title, the "Written at…" line, and **Copy prompt**, **▸ Open** and **Keep going**. The note itself is in the Handoff pane.
+
 ## 1.1.3 (2026-10-18)
 
 **Asked for:** the note written while you're away should open in the Handoff pane on the right, like a /handoff note, with the away box still showing.

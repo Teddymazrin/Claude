@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer } from 'claude-code'
 
 import type { Note, Plan, Seen } from '../types'
-import { COLD_WHY, awayTitle, awayWhy, coldKey, coldSwitchWhy, coldTitle, notePreview, shouldAutoNote } from './cold'
+import { COLD_WHY, awayTitle, awayWhy, coldKey, coldSwitchWhy, coldTitle, shouldAutoNote } from './cold'
 import {
   AMBER,
   COMMAND,
@@ -378,8 +378,8 @@ async function coldBox($: EngineInterface, e: Surface) {
 }
 
 /**
- * Above the prompt: the note written while you were away, with what happened and the ways on. Shows until you
- * continue from it, close it, or send a message.
+ * Above the prompt: what happened while you were away, and the ways on: the note itself is in the Handoff pane.
+ * Shows until you close it or send a message.
  */
 async function awayBox($: EngineInterface, e: Surface) {
   const saved = await read($, note)
@@ -393,7 +393,6 @@ async function awayBox($: EngineInterface, e: Surface) {
   } catch {
     when = new Date(saved.at).toISOString().slice(11, 16)
   }
-  const { lines, more } = notePreview(saved.text)
   const close = () => {
     previewCold = false
     return update($, note, n => (n ? { ...n, auto: false } : n))
@@ -413,18 +412,8 @@ async function awayBox($: EngineInterface, e: Surface) {
         <Button key="away-close" plain label="✕" hover={{ bold: true }} onPress={close} />
       </Box>
       <Text key="away-why" dimColor>{awayWhy(cold, when, cache)}</Text>
-      <Box key="away-note-text" flexDirection="column" marginY={1} paddingLeft={2}>
-        {lines.map((line, i) => (
-          <Text key={`away-line-${i}`} wrap="truncate-end">{line}</Text>
-        ))}
-        {more > 0 ? <Text key="away-more" dimColor>{`… ${more} more line${more === 1 ? '' : 's'} · Open shows it all`}</Text> : null}
-      </Box>
-      <Box key="away-actions" flexDirection="row" flexWrap="wrap">
-        {button('away-continue', '↻ Continue from note', cold ? ORANGE : SLATE, async () => {
-          await close()
-          await startFresh($, saved.text)
-        })}
-        {button('away-copy', COPY_LABEL, SLATE, async press => {
+      <Box key="away-actions" flexDirection="row" flexWrap="wrap" marginTop={1}>
+        {button('away-copy', COPY_LABEL, cold ? ORANGE : SLATE, async press => {
           const copied = await $.ui.copy({ text: copyPrompt(saved.text), surface: press.surface })
           $.ui.toast(copied.isCopied ? 'Copied · open a new session and paste it to pick up where you left off' : 'Could not copy the prompt')
         })}

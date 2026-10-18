@@ -56,11 +56,5 @@ export const awayTitle = (isCacheCold: boolean) =>
 /** The away box's line under the title. */
 export const awayWhy = (isCacheCold: boolean, when: string, cache: string) =>
   isCacheCold
-    ? `Written at ${when}, before the cache expired. Continue from it to skip re-reading this chat at full price.`
+    ? `Written at ${when}, before the cache expired. Copy prompt and paste it in a new chat to skip re-reading this one at full price.`
     : `Written at ${when}. The chat is still saved (${cache}), so you can keep going here, or start fresh from the note.`
-
-/** The first lines of a note, for the away box: blank lines dropped, and how many more there are. */
-export const notePreview = (text: string, max = 8) => {
-  const lines = text.split('\n').filter(l => l.trim() !== '')
-  return { lines: lines.slice(0, max), more: Math.max(0, lines.length - max) }
-}

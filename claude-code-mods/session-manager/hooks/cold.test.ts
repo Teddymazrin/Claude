@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { AUTO_LEAD_MS, awayTitle, notePreview, shouldAutoNote } from './cold'
+import { AUTO_LEAD_MS, awayTitle, shouldAutoNote } from './cold'
 import { autoPrompt, parseAway } from './handoff'
 
 const HOUR = 60 * 60_000
@@ -32,11 +32,9 @@ test('the away prompt asks for the note itself, since no tools run', () => {
   expect(p).not.toContain('handoff_note tool')
 })
 
-test('the away box says the cache ran out and previews the note', () => {
+test('the away box says the cache ran out', () => {
   expect(awayTitle(true)).toBe('Cache ran out while you were away · here is your handoff note')
   expect(awayTitle(false)).toBe('You were away · a handoff note is ready')
-  const text = ['# Handoff: C:\\app', '', '## Goal', 'Ship it', '## Done', 'a', 'b', 'c', 'd', 'e'].join('\n')
-  expect(notePreview(text)).toEqual({ lines: ['# Handoff: C:\\app', '## Goal', 'Ship it', '## Done', 'a', 'b', 'c', 'd'], more: 1 })
 })
 
 test('/handoff away previews the away box, warm or cold', () => {
