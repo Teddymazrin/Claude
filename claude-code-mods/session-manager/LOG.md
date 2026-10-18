@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.1.2 (2026-10-18)
+
+**Asked for:** a way to see the away box without waiting an hour.
+
+**What changed:** `/handoff away` writes the note from the cache now, the same way it is written while you're away, and shows the away box. `/handoff away cold` shows it as if the cache had run out.
+
 ## 1.1.1 (2026-10-18)
 
 **Asked for:** when the note was written while you were away, a clear message on return: the cache ran out, here is the handoff note. The side pane opens on its own only in a wide terminal, so it couldn't be counted on.

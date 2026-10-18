@@ -22,6 +22,7 @@ import {
   isOpen,
   levelFor,
   parseAsk,
+  parseAway,
   whyFor,
   writePrompt,
 } from './handoff'
@@ -132,16 +133,28 @@ async function autoNote($: EngineInterface) {
   const saved = await read($, note)
   const ttlMs = cacheTtlMs(m.plan)
   if (!shouldAutoNote({ last, ttlMs, now, context: m.context, nextModel: model, isBusy, noteAt: saved?.at ?? null })) return
+  await writeAwayNote($)
+}
+
+// `/handoff away [cold]`: the away box drawn as if the cache ran out, for a preview; cleared when the box closes.
+let previewCold = false
+
+/** Writes the note from the cache and puts it in the away box; resolves with why not, or null when written. */
+async function writeAwayNote($: EngineInterface): Promise<string | null> {
+  if (isWriting) return 'a note is already being written'
+  const { last, now } = await snapshot($)
   isWriting = true
   try {
     const root = await $.session.root()
     const reply = await $.model.fork({ prompt: autoPrompt(root, new Date(now).toLocaleString()) })
-    if (!reply.isAnswered || !reply.text.trim()) return
+    if (!reply.isAnswered) return reply.reason
+    if (!reply.text.trim()) return 'the reply was empty'
     const at = await $.clock.now()
     if (reply.usage.cache_read_input_tokens > 0 && last) await update($, lastCall, () => ({ at, model: last.model }))
     // Shown in the away box above the prompt, which always has room; the side pane opens only on a wide terminal.
     await update($, note, () => ({ root, text: reply.text.trim(), at, auto: true }))
     $.ui.invalidate('ui.render')
+    return null
   } finally {
     isWriting = false
   }
@@ -232,7 +245,7 @@ async function startHandoff($: EngineInterface) {
   })
   await $.command.register({
     name: COMMAND,
-    description: 'Write a handoff note for this session (`open` shows it again, `ask 50|65|80` previews the offer box)',
+    description: 'Write a handoff note for this session (`open` shows it again, `ask 50|65|80` previews the offer box, `away [cold]` the box you see after being away)',
     argumentHint: '[open|ask [50|65|80]]',
   })
 }
@@ -370,7 +383,7 @@ async function awayBox($: EngineInterface, e: Surface) {
   if (!saved?.auto) return null
   const { cache } = await snapshot($)
   const { Box, Text, Button } = $.ui.resolve(e)
-  const cold = isCold(cache)
+  const cold = isCold(cache) || previewCold
   let when: string
   try {
     when = new Date(saved.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -378,7 +391,10 @@ async function awayBox($: EngineInterface, e: Surface) {
     when = new Date(saved.at).toISOString().slice(11, 16)
   }
   const { lines, more } = notePreview(saved.text)
-  const close = () => update($, note, n => (n ? { ...n, auto: false } : n))
+  const close = () => {
+    previewCold = false
+    return update($, note, n => (n ? { ...n, auto: false } : n))
+  }
   const button = (key: string, label: string, fill: string, onPress: (press: { surface: Surface['surface'] }) => unknown) => (
     <Box key={`${key}-box`} backgroundColor={fill} paddingX={1} marginRight={1} hover={{ backgroundColor: FRAME }}>
       <Button key={key} plain label={label} hover={{ bold: true }} onPress={onPress} />
@@ -603,6 +619,14 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: COMMAND }, async ($, e) => {
+    const away = parseAway(e.args)
+    if (away) {
+      previewCold = away.isCold
+      $.ui.toast(`${TITLE}: writing the note from the cache…`)
+      const why = await writeAwayNote($)
+      if (why) previewCold = false
+      return { text: why ? `${TITLE}: couldn't write the note (${why})` : `${TITLE}: showing the away box above the prompt` }
+    }
     const ask = parseAsk(e.args)
     if (ask) {
       const percent = ask.percent ?? (await $.session.usage().catch(() => undefined))?.context.percent ?? LEVELS[0]

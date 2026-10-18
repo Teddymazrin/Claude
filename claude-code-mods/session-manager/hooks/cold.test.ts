@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { AUTO_LEAD_MS, awayTitle, notePreview, shouldAutoNote } from './cold'
-import { autoPrompt } from './handoff'
+import { autoPrompt, parseAway } from './handoff'
 
 const HOUR = 60 * 60_000
 const last = { at: 0, model: 'claude-opus-5-5' }
@@ -37,4 +37,11 @@ test('the away box says the cache ran out and previews the note', () => {
   expect(awayTitle(false)).toBe('You were away · a handoff note is ready')
   const text = ['# Handoff: C:\\app', '', '## Goal', 'Ship it', '## Done', 'a', 'b', 'c', 'd', 'e'].join('\n')
   expect(notePreview(text)).toEqual({ lines: ['# Handoff: C:\\app', '## Goal', 'Ship it', '## Done', 'a', 'b', 'c', 'd'], more: 1 })
+})
+
+test('/handoff away previews the away box, warm or cold', () => {
+  expect(parseAway('away')).toEqual({ isCold: false })
+  expect(parseAway(' away cold ')).toEqual({ isCold: true })
+  expect(parseAway('ask 50')).toBe(null)
+  expect(parseAway('')).toBe(null)
 })
