@@ -50,18 +50,18 @@ test('away for an hour: the note is written from the cache once, and the box say
   await clock.advance(MIN)
   expect(forks.length).toBe(1)
 
+  // Still warm: nothing to warn about, so no box; the note waits in the pane.
   const ui = await $.ui.mount({ ...ABOVE, surface: 'terminal' } as never)
-  expect(await ui.find({ type: 'Text', text: 'You were away · a handoff note is ready' })).toBeTruthy()
-  // Just the message and the ways on: the note itself is in the pane.
-  expect(await ui.find({ type: 'Text', text: 'Ship the fix' })).toBeFalsy()
-  expect(await ui.find({ key: 'away-continue' })).toBeFalsy()
-  for (const key of ['away-copy', 'away-open', 'away-keep']) expect(await ui.find({ key })).toBeTruthy()
+  expect(await ui.find({ key: 'away-note' })).toBeFalsy()
   await ui.unmount()
 
   // Reading the cache kept it warm for another hour; past that, the box says it ran out.
   await clock.advance(61 * MIN)
   const later = await $.ui.mount({ ...ABOVE, surface: 'terminal' } as never)
   expect(await later.find({ type: 'Text', text: 'Cache ran out while you were away · here is your handoff note' })).toBeTruthy()
+  // Just the message and the ways on: the note itself is in the pane.
+  expect(await later.find({ type: 'Text', text: 'Ship the fix' })).toBeFalsy()
+  for (const key of ['away-copy', 'away-open', 'away-keep']) expect(await later.find({ key })).toBeTruthy()
   // Keep going closes it.
   await later.press({ key: 'away-keep' })
   expect(await later.find({ key: 'away-note' })).toBeFalsy()

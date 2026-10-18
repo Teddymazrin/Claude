@@ -41,11 +41,8 @@ export const offerText = (percent: number) => `${fullText(percent)}${whyFor(perc
 /** `/handoff open` shows this session's note again; anything else writes a fresh one. */
 export const isOpen = (args: string) => /^\s*(open|show|view)\s*$/i.test(args)
 
-/** `/handoff away [cold]` writes the note now and shows the away box, as after being away (cold: as if the cache ran out). */
-export const parseAway = (args: string): { isCold: boolean } | null => {
-  const match = /^\s*away(?:\s+(cold))?\s*$/i.exec(args)
-  return match ? { isCold: Boolean(match[1]) } : null
-}
+/** `/handoff away` writes the note now and shows the away box as if the cache had run out (`cold` is still taken). */
+export const isAway = (args: string) => /^\s*away(?:\s+cold)?\s*$/i.test(args)
 
 /** `/handoff ask [50|65|80]` shows the box now, at that percentage or the context's own. Null when not an ask. */
 export const parseAsk = (args: string): { percent?: number } | null => {

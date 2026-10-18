@@ -49,12 +49,9 @@ export const shouldAutoNote = (a: {
 }
 
 
-/** The away box's title: the cache ran out while you were away, or is still warm thanks to the note's write. */
-export const awayTitle = (isCacheCold: boolean) =>
-  isCacheCold ? 'Cache ran out while you were away · here is your handoff note' : 'You were away · a handoff note is ready'
+/** The away box's title: it shows only once the cache has run out. */
+export const AWAY_TITLE = 'Cache ran out while you were away · here is your handoff note'
 
 /** The away box's line under the title. */
-export const awayWhy = (isCacheCold: boolean, when: string, cache: string) =>
-  isCacheCold
-    ? `Written at ${when}, before the cache expired. Copy prompt and paste it in a new chat to skip re-reading this one at full price.`
-    : `Written at ${when}. The chat is still saved (${cache}), so you can keep going here, or start fresh from the note.`
+export const awayWhy = (when: string) =>
+  `Written at ${when}, before the cache expired. Copy prompt and paste it in a new chat to skip re-reading this one at full price.`

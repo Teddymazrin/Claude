@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer } from 'claude-code'
 
 import type { Note, Plan, Seen } from '../types'
-import { COLD_WHY, awayTitle, awayWhy, coldKey, coldSwitchWhy, coldTitle, shouldAutoNote } from './cold'
+import { AWAY_TITLE, COLD_WHY, awayWhy, coldKey, coldSwitchWhy, coldTitle, shouldAutoNote } from './cold'
 import {
   AMBER,
   COMMAND,
@@ -22,7 +22,7 @@ import {
   isOpen,
   levelFor,
   parseAsk,
-  parseAway,
+  isAway,
   whyFor,
   writePrompt,
 } from './handoff'
@@ -136,7 +136,7 @@ async function autoNote($: EngineInterface) {
   await writeAwayNote($)
 }
 
-// `/handoff away [cold]`: the away box drawn as if the cache ran out, for a preview; cleared when the box closes.
+// `/handoff away`: the away box drawn as if the cache ran out, for a preview; cleared when the box closes.
 let previewCold = false
 
 /** Writes the note from the cache and puts it in the away box; resolves with why not, or null when written. */
@@ -248,7 +248,7 @@ async function startHandoff($: EngineInterface) {
   })
   await $.command.register({
     name: COMMAND,
-    description: 'Write a handoff note for this session (`open` shows it again, `ask 50|65|80` previews the offer box, `away [cold]` the box you see after being away)',
+    description: 'Write a handoff note for this session (`open` shows it again, `ask 50|65|80` previews the offer box, `away` the box you see after the cache ran out while you were away)',
     argumentHint: '[open|ask [50|65|80]]',
   })
 }
@@ -378,15 +378,16 @@ async function coldBox($: EngineInterface, e: Surface) {
 }
 
 /**
- * Above the prompt: what happened while you were away, and the ways on: the note itself is in the Handoff pane.
+ * Above the prompt, once the cache has run out: the note written while you were away, and the ways on. The note
+ * itself is in the Handoff pane. While the cache is still warm there is nothing to warn about, so it waits there.
  * Shows until you close it or send a message.
  */
 async function awayBox($: EngineInterface, e: Surface) {
   const saved = await read($, note)
   if (!saved?.auto) return null
   const { cache } = await snapshot($)
+  if (!isCold(cache) && !previewCold) return null
   const { Box, Text, Button } = $.ui.resolve(e)
-  const cold = isCold(cache) || previewCold
   let when: string
   try {
     when = new Date(saved.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -403,17 +404,17 @@ async function awayBox($: EngineInterface, e: Surface) {
     </Box>
   )
   return (
-    <Box key="away-note" flexDirection="column" borderStyle="round" borderColor={cold ? ORANGE : FRAME} paddingX={1}>
+    <Box key="away-note" flexDirection="column" borderStyle="round" borderColor={ORANGE} paddingX={1}>
       <Box key="away-header" flexDirection="row" justifyContent="space-between">
         <Text>
-          <Text color={cold ? RED : VIOLET}>◈ </Text>
-          <Text bold color={cold ? RED : VIOLET}>{awayTitle(cold)}</Text>
+          <Text color={RED}>◈ </Text>
+          <Text bold color={RED}>{AWAY_TITLE}</Text>
         </Text>
         <Button key="away-close" plain label="✕" hover={{ bold: true }} onPress={close} />
       </Box>
-      <Text key="away-why" dimColor>{awayWhy(cold, when, cache)}</Text>
+      <Text key="away-why" dimColor>{awayWhy(when)}</Text>
       <Box key="away-actions" flexDirection="row" flexWrap="wrap" marginTop={1}>
-        {button('away-copy', COPY_LABEL, cold ? ORANGE : SLATE, async press => {
+        {button('away-copy', COPY_LABEL, ORANGE, async press => {
           const copied = await $.ui.copy({ text: copyPrompt(saved.text), surface: press.surface })
           $.ui.toast(copied.isCopied ? 'Copied · open a new session and paste it to pick up where you left off' : 'Could not copy the prompt')
         })}
@@ -611,9 +612,8 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: COMMAND }, async ($, e) => {
-    const away = parseAway(e.args)
-    if (away) {
-      previewCold = away.isCold
+    if (isAway(e.args)) {
+      previewCold = true
       $.ui.toast(`${TITLE}: writing the note from the cache…`)
       const why = await writeAwayNote($, true)
       if (why) previewCold = false

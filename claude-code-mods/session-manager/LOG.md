@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.1.5 (2026-10-18)
+
+**Asked for:** the away box only when the cache has actually run out; back while the chat is still saved, there's nothing to warn about.
+
+**What changed:** the away box shows only once the cache has run out. Before that the note waits in the Handoff pane. `/handoff away` always previews the cold box (`/handoff away cold` still works and does the same).
+
 ## 1.1.4 (2026-10-18)
 
 **Asked for:** none of the note in the away box, and no Continue option: just the message and Copy prompt / Open / Keep going.
