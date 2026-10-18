@@ -6,7 +6,7 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | --- | --- | --- | --- |
 | [Bare View](#bare-view) | 1.15.2 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.14.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Session Manager](#session-manager) | 1.1.2 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
+| [Session Manager](#session-manager) | 1.1.3 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
 | [Action Items](#action-items) | 6.4.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |

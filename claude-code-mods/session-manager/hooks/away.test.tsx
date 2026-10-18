@@ -12,6 +12,11 @@ const NOTE = '# Handoff: C:\app\n## Goal\nShip the fix'
 test('away for an hour: the note is written from the cache once, and the box says so with the note in it', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const forks: string[] = []
+  const opened: string[] = []
+  on('ui.open', ($, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } } as never
+  })
   on('session.model', () => ({ value: 'claude-opus-5-5' }) as never)
   on('session.root', () => ({ value: 'C:\app' }) as never)
   on('session.usage', () => ({ value: { context: { percent: 40 }, rateLimits: [{ kind: 'five_hour', percentUsed: 5 }] } }) as never)
@@ -40,6 +45,8 @@ test('away for an hour: the note is written from the cache once, and the box say
   await clock.advance(6 * MIN)
   expect(forks.length).toBe(1)
   expect(forks[0]).toContain('No tools are available')
+  // The whole note opens in the Handoff pane too.
+  expect(opened).toContain('session-manager-handoff')
   await clock.advance(MIN)
   expect(forks.length).toBe(1)
 

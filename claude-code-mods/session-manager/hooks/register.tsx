@@ -140,7 +140,7 @@ async function autoNote($: EngineInterface) {
 let previewCold = false
 
 /** Writes the note from the cache and puts it in the away box; resolves with why not, or null when written. */
-async function writeAwayNote($: EngineInterface): Promise<string | null> {
+async function writeAwayNote($: EngineInterface, isAsked = false): Promise<string | null> {
   if (isWriting) return 'a note is already being written'
   const { last, now } = await snapshot($)
   isWriting = true
@@ -151,8 +151,11 @@ async function writeAwayNote($: EngineInterface): Promise<string | null> {
     if (!reply.text.trim()) return 'the reply was empty'
     const at = await $.clock.now()
     if (reply.usage.cache_read_input_tokens > 0 && last) await update($, lastCall, () => ({ at, model: last.model }))
-    // Shown in the away box above the prompt, which always has room; the side pane opens only on a wide terminal.
+    // The whole note in the side pane, as /handoff shows it, and the away box above the prompt, which always has
+    // room: the pane opens unasked only on a wide terminal. The away box stands in for the note's own band.
     await update($, note, () => ({ root, text: reply.text.trim(), at, auto: true }))
+    await show($, isAsked)
+    await update($, band, () => false)
     $.ui.invalidate('ui.render')
     return null
   } finally {
@@ -623,7 +626,7 @@ export const register: Register = on => {
     if (away) {
       previewCold = away.isCold
       $.ui.toast(`${TITLE}: writing the note from the cache…`)
-      const why = await writeAwayNote($)
+      const why = await writeAwayNote($, true)
       if (why) previewCold = false
       return { text: why ? `${TITLE}: couldn't write the note (${why})` : `${TITLE}: showing the away box above the prompt` }
     }

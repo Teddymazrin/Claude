@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.1.3 (2026-10-18)
+
+**Asked for:** the note written while you're away should open in the Handoff pane on the right, like a /handoff note, with the away box still showing.
+
+**What changed:** the note opens in the Handoff pane as well as the away box. Written while you're away, the pane opens where the terminal is wide enough; `/handoff away` opens it at any width.
+
 ## 1.1.2 (2026-10-18)
 
 **Asked for:** a way to see the away box without waiting an hour.
