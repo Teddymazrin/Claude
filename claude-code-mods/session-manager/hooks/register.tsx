@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer } from 'claude-code'
 
 import type { Note, Plan, Seen } from '../types'
-import { COLD_WHY, coldKey, coldSwitchWhy, coldTitle } from './cold'
+import { COLD_NOTE_WHY, COLD_WHY, coldKey, coldSwitchWhy, coldTitle, shouldAutoNote } from './cold'
 import {
   AMBER,
   COMMAND,
@@ -16,6 +16,7 @@ import {
   TOOL,
   TOOL_ID,
   VIOLET,
+  autoPrompt,
   copyPrompt,
   fullText,
   isOpen,
@@ -115,6 +116,35 @@ async function snapshot($: EngineInterface) {
 }
 
 let tick: Timer | undefined
+
+// A main-thread turn is running: nobody is away, and the cache is in use.
+let isBusy = false
+// A note is being written from the cache now.
+let isWriting = false
+
+/**
+ * While you are away, just before the cache goes cold: the handoff note, written from the cache with a side request
+ * that adds nothing to the chat. Reading the cache keeps it warm, so the countdown starts over from the write.
+ */
+async function autoNote($: EngineInterface) {
+  if (isWriting) return
+  const { m, last, model, now } = await snapshot($)
+  const saved = await read($, note)
+  const ttlMs = cacheTtlMs(m.plan)
+  if (!shouldAutoNote({ last, ttlMs, now, context: m.context, nextModel: model, isBusy, noteAt: saved?.at ?? null })) return
+  isWriting = true
+  try {
+    const root = await $.session.root()
+    const reply = await $.model.fork({ prompt: autoPrompt(root, new Date(now).toLocaleString()) })
+    if (!reply.isAnswered || !reply.text.trim()) return
+    const at = await $.clock.now()
+    if (reply.usage.cache_read_input_tokens > 0 && last) await update($, lastCall, () => ({ at, model: last.model }))
+    await update($, note, () => ({ root, text: reply.text.trim(), at, auto: true }))
+    await show($, false)
+  } finally {
+    isWriting = false
+  }
+}
 
 // ── Handoff ──────────────────────────────────────────────────────────────────
 
@@ -295,6 +325,9 @@ async function coldBox($: EngineInterface, e: Surface) {
   }
   // Cold only because the model changed, and the old model's cache is still warm: go back there to write the note.
   const isSwitch = cache === 'cache cold · new model' && last.at + cacheTtlMs(m.plan) > now
+  // A note written since the last reply (by you, or while you were away): continue from it rather than write another.
+  const saved = await read($, note)
+  const ready = saved && saved.at >= last.at && !isSwitch ? saved : null
   const oldId = last.model
   const switchBack = async () => {
     await dismiss()
@@ -306,7 +339,7 @@ async function coldBox($: EngineInterface, e: Surface) {
         <Text>
           <Text color={RED}>⚠ </Text>
           <Text bold color={RED}>{coldTitle(cache)}</Text>
-          <Text dimColor>{isSwitch ? coldSwitchWhy(model ? modelName(model) : 'This model', modelName(oldId)) : COLD_WHY}</Text>
+          <Text dimColor>{isSwitch ? coldSwitchWhy(model ? modelName(model) : 'This model', modelName(oldId)) : ready ? COLD_NOTE_WHY : COLD_WHY}</Text>
         </Text>
         <Button key="cold-close" plain label="✕" hover={{ bold: true }} onPress={dismiss} />
       </Box>
@@ -314,6 +347,10 @@ async function coldBox($: EngineInterface, e: Surface) {
         {isSwitch ? (
           <Box key="cold-back-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
             <Button key="cold-back" plain label={`↩ Switch back to ${modelName(oldId)}`} hover={{ bold: true }} onPress={switchBack} />
+          </Box>
+        ) : ready ? (
+          <Box key="cold-note-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
+            <Button key="cold-note" plain label="↻ Continue from note" hover={{ bold: true }} onPress={() => startFresh($, ready.text)} />
           </Box>
         ) : (
           <Box key="cold-handoff-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
@@ -355,6 +392,7 @@ export const register: Register = on => {
     tick?.cancel()
     tick = $.clock.every(2_000, () => {
       void rearmCold($).finally(() => $.ui.invalidate('ui.render'))
+      void autoNote($).catch(() => {})
     })
     await startHandoff($)
     return next(e)
@@ -422,7 +460,13 @@ export const register: Register = on => {
   })
 
   // The main thread's response just landed: the cache was read or written now.
+  on('turn.start', async ($, e, next) => {
+    isBusy = true
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) isBusy = false
     if (e.agentId === undefined && e.usage) {
       const call = { at: await $.clock.now(), model: e.usage.model }
       await update($, lastCall, () => call)

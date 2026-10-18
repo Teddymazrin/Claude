@@ -7,8 +7,8 @@ export type Limit = { percent: number; resetsAt?: string }
 export type Meter = { plan: Plan | null; context: number | null; limit: Limit | null; week: Limit | null }
 /** A context percentage a handoff offer fires at; 0 for none. */
 export type Level = number
-/** A handoff note: the project it is for, its text, and when it was written. */
-export type Note = { root: string; text: string; at: number }
+/** A handoff note: the project it is for, its text, when it was written, and whether it was written while you were away. */
+export type Note = { root: string; text: string; at: number; auto?: boolean }
 
 declare module 'claude-code' {
   interface PluginState {

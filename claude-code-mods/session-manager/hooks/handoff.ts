@@ -48,20 +48,33 @@ export const parseAsk = (args: string): { percent?: number } | null => {
   return match[1] ? { percent: Number(match[1]) } : {}
 }
 
+// The note's sections, the same however it is written.
+const sections = (root: string, when: string) => [
+  'It is for a fresh session with none of this conversation, so make it complete but short. Use these sections:',
+  `# Handoff: ${root}`,
+  `Written ${when}`,
+  '## Goal: what we are trying to do, in one or two lines',
+  '## Done: what is finished and verified',
+  '## In progress: what was mid-way and exactly where it stopped',
+  '## Next steps: a numbered list, the first one ready to start',
+  '## Key files: paths that matter, with a few words on each',
+  '## Decisions and gotchas: choices made and why, things that failed, things to avoid',
+  'Only write what is true of this session; leave a section out rather than guess.',
+]
+
 export const writePrompt = (root: string, when: string) =>
   [
     `Write a handoff note for this session and send it with the ${TOOL} tool (pass the whole note as \`note\`). Don't write it to a file.`,
-    'It is for a fresh session with none of this conversation, so make it complete but short. Use these sections:',
-    `# Handoff: ${root}`,
-    `Written ${when}`,
-    '## Goal: what we are trying to do, in one or two lines',
-    '## Done: what is finished and verified',
-    '## In progress: what was mid-way and exactly where it stopped',
-    '## Next steps: a numbered list, the first one ready to start',
-    '## Key files: paths that matter, with a few words on each',
-    '## Decisions and gotchas: choices made and why, things that failed, things to avoid',
-    'Only write what is true of this session; leave a section out rather than guess.',
+    ...sections(root, when),
     'The note opens in the Handoff pane, so reply with one short line, not the note.',
+  ].join('\n')
+
+/** Asked from the cache while the user is away: no tools run, so the reply is the note itself. */
+export const autoPrompt = (root: string, when: string) =>
+  [
+    'The user has stepped away and this chat is about to drop out of the cache. Write a handoff note for this session now. No tools are available.',
+    ...sections(root, when),
+    'Reply with the note alone, in Markdown, starting with its # Handoff line: nothing before or after it.',
   ].join('\n')
 
 /** What the person pastes into a fresh session: the note itself, with what to do with it. */

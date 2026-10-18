@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.1.0 (2026-10-18)
+
+**Asked for:** when the cache goes cold from being away, **Write handoff** re-reads the whole chat at full price, the very cost it should avoid.
+
+**What changed:** while you're away, about 5 minutes before the cache goes cold, Session Manager writes the handoff note itself from the cache, with a side request that adds nothing to the chat. It does this once per idle spell, only when the chat is at least 20% of context, no turn is running, and the model hasn't changed. It never does it on API billing (the 5-minute cache is too short to be away from). Reading the cache keeps it warm, so the countdown starts over from the write. When you come back and the cache has gone cold, the box says a note was saved and offers **↻ Continue from note** (clear and continue from it) instead of **Write handoff**. The note also shows in the Handoff pane, with Copy prompt.
+
 ## 1.0.2 (2026-10-13)
 
 **Found in use:** after a model switch the cold-cache box offered **Write handoff**, but the new model has no cache, so writing the note there re-reads the whole chat at full price, which is the cost the box warns about.
