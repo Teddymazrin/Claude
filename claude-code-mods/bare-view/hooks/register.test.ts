@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PEEK_MAX, advanceChecklist, finishActive, isClosed, isMuted, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel, stepWindow } from './register'
+import { PEEK_MAX, advanceChecklist, answerIds, finishActive, isClosed, isMuted, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel, stepWindow } from './register'
 
 test('tallies every tool by name, MCP ones by server, and the one running', () => {
   expect(mcpServer('Bash')).toBeUndefined()
@@ -272,4 +272,14 @@ test('stepWindow shows every step that fits, else a run around the focus with ro
   expect(stepWindow(Array(10).fill(1), 9, 4)).toEqual({ start: 7, end: 10 })
   // No room at all still shows the focus.
   expect(stepWindow(Array(10).fill(1), 0, 0)).toEqual({ start: 0, end: 1 })
+})
+
+test('an answer muted while a step was left open is picked out to show again', () => {
+  const texts = new Map([
+    ['working-1', 'Found the repo; reading the source.'],
+    ['answer-2', '**Summary**: fixed the effort pick.'],
+    ['blank-3', '  '],
+  ])
+  expect(answerIds(texts, '**Summary**: fixed the effort pick.\n\nWorth knowing: none')).toEqual(['answer-2'])
+  expect(answerIds(texts, 'something else')).toEqual([])
 })

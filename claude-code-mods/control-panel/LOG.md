@@ -1,5 +1,11 @@
 # Control Panel log
 
+## 1.14.0 (2026-10-18)
+
+**Found in use:** an effort pick only changed what the pane and status row showed. It was a hidden override on every request and saved across sessions, so `/effort` typed later looked like it switched but every request still went out with the old pick.
+
+**What changed:** an effort pick now runs `/effort <level>` itself, the way a model pick runs `/model` (terminal: straight away; desktop app: through the prompt box). Nothing overrides requests any more, so `/effort` and the panel always agree. A pick saved by an earlier version is cleared.
+
 ## 1.13.1 (2026-10-13)
 
 **Found in use:** in the terminal, a model pick used to switch straight away; since 1.13.0 it only filled the prompt box, like the desktop app.

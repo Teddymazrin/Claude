@@ -82,12 +82,6 @@ export const currentText = (c: Choice, s: Seen | null) => {
 
 export const chipText = () => `◆ ${TITLE}`
 
-/** The request as it should be sent: the effort pick where one is set. The model is the session's own (see pick). */
-export const applyChoice = <T extends { model: string; effort?: unknown }>(e: T, c: Choice): T => ({
-  ...e,
-  ...(c.effort ? { effort: c.effort } : {}),
-})
-
 const SUMMARY_WORDS = 5
 
 // A few words on what a mod does. A description that opens with a short
@@ -312,35 +306,38 @@ async function runQuick($: EngineInterface, quick: (typeof QUICK)[number]) {
   await $.command.run({ command: quick.command }).catch(() => $.ui.toast(`Couldn't run /${quick.command} · type it at the prompt`))
 }
 
-// A model pick sends `/model <id>` as if you typed it, so the app's own model menu, the footer and every other mod
-// agree. In the terminal it runs as a mod command and switches straight away. The desktop app only sets a hidden
-// "this session only" model from a mod command and keeps its menu's, so there it goes through the prompt.
-// Only the effort is kept as a pick and applied to each request.
+// A pick sends `/model <id>` or `/effort <level>` as if you typed it, so the engine's own setting changes and the
+// app's menu, the footer and every other mod agree. In the terminal it runs as a mod command and switches straight
+// away. The desktop app only sets a hidden "this session only" value from a mod command and keeps its menu's, so
+// there it goes through the prompt. Nothing is kept as an override on requests: /effort or /model typed later wins.
+async function sendSetting($: EngineInterface, command: 'model' | 'effort', arg: string) {
+  const what = command === 'model' ? 'model' : 'effort'
+  const viaPrompt = () =>
+    $.prompt
+      .submit({ text: `/${command} ${arg}` })
+      .then(() => $.ui.invalidate('ui.render'))
+      .catch(async () => {
+        const filled = await $.prompt.fill({ text: `/${command} ${arg}` }).catch(() => undefined)
+        $.ui.toast(filled?.isFilled ? `Press Enter to switch the ${what}` : `Couldn't switch the ${what} · type /${command} ${arg}`)
+      })
+  const inApp = (await $.session.surfaces().catch(() => [])).some(s => s !== 'terminal')
+  // After the press has finished: sent from inside the button's own handler, it is refused. If the prompt still
+  // refuses, the command goes in the prompt box and one Enter sends it.
+  $.clock.after(SEND_DELAY_MS, () => {
+    if (inApp) return viaPrompt()
+    $.command
+      .run({ command, args: arg })
+      .then(() => $.ui.invalidate('ui.render'))
+      .catch(viaPrompt)
+  })
+}
+
+// The effort pick is held only until the next request shows what the engine sends; the pane lights it meanwhile.
 async function pick($: EngineInterface, patch: Partial<Choice>) {
-  if (patch.model) {
-    const id = patch.model
-    const viaPrompt = () =>
-      $.prompt
-        .submit({ text: `/model ${id}` })
-        .then(() => $.ui.invalidate('ui.render'))
-        .catch(async () => {
-          const filled = await $.prompt.fill({ text: `/model ${id}` }).catch(() => undefined)
-          $.ui.toast(filled?.isFilled ? 'Press Enter to switch the model' : `Couldn't switch the model · type /model ${id}`)
-        })
-    const inApp = (await $.session.surfaces().catch(() => [])).some(s => s !== 'terminal')
-    // After the press has finished: sent from inside the button's own handler, it is refused. If the prompt still
-    // refuses, the command goes in the prompt box and one Enter sends it.
-    $.clock.after(SEND_DELAY_MS, () => {
-      if (inApp) return viaPrompt()
-      $.command
-        .run({ command: 'model', args: id })
-        .then(() => $.ui.invalidate('ui.render'))
-        .catch(viaPrompt)
-    })
-  }
-  const next = { ...(await read($, choice)), ...patch, model: null }
-  await update($, choice, () => next)
-  await $.store.set('choice', next)
+  if (patch.model) await sendSetting($, 'model', patch.model)
+  if (patch.effort) await sendSetting($, 'effort', patch.effort)
+  await update($, choice, c => ({ model: null, effort: patch.effort ?? c.effort }))
+  await $.store.set('choice', { model: null, effort: null })
 }
 
 async function openPane($: EngineInterface) {
@@ -376,12 +373,11 @@ export const register: Register = on => {
     // Clear the footer line an earlier version pinned above auto mode.
     $.ui.status(undefined)
 
-    // Once per session: restore the saved model pick, and reload switched-off mods
-    // that loaded before Control Panel and so slipped past plugin.register.
+    // Once per session: reload switched-off mods that loaded before Control Panel and so slipped past plugin.register.
     if (!(await read($, booted))) {
       await update($, booted, () => true)
-      // A model pick saved by an earlier version is dropped: the model is switched with /model now.
-      if (saved) await update($, choice, () => ({ model: null, effort: saved.effort ?? null }))
+      // A pick saved by an earlier version is dropped: it overrode /effort and /model on every request.
+      if (saved?.model || saved?.effort) await $.store.set('choice', { model: null, effort: null })
       for (const mod of await read($, mods)) if (off.includes(mod.name)) await poke($, mod).catch(() => {})
     }
 
@@ -393,14 +389,14 @@ export const register: Register = on => {
     return { text: `${TITLE} opened.` }
   })
 
-  // Every main-thread request goes out with the picked model and effort.
+  // Notes what each main-thread request goes out with; a pending pick gives way to it.
   on('turn.step', async function* ($, e, next) {
     if (e.agentId !== undefined) return yield* next(e)
-    const sent = applyChoice(e, await read($, choice))
-    const now: Seen = { model: sent.model, effort: sent.effort === undefined ? null : String(sent.effort) }
+    const now: Seen = { model: e.model, effort: e.effort === undefined ? null : String(e.effort) }
     const last = await read($, seen)
     if (last?.model !== now.model || last?.effort !== now.effort) await update($, seen, () => now)
-    return yield* next(sent)
+    if ((await read($, choice)).effort) await update($, choice, () => ({ model: null, effort: null }))
+    return yield* next(e)
   })
 
   // The modes, then one chip, bottom right.

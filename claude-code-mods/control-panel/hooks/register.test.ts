@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { BLURB_MAX, EFFORTS, MODELS, QUICK, SETTINGS, isSetting, settingRows, visibleQuick, applyChoice, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
+import { BLURB_MAX, EFFORTS, MODELS, QUICK, SETTINGS, isSetting, settingRows, visibleQuick, debouncer, installedKey, installedRoots, isInstalled, withPluginEnabled, blurb, chipText, currentText, parentOf, spaced, titled, toggled } from './register'
 
 test('finds the mods folder from a mod root on either separator', () => {
   const win = ['C:', 'mods', 'abc', 'control-panel'].join(String.fromCharCode(92))
@@ -21,12 +21,6 @@ test('names the model and effort the next request uses', () => {
     'Sonnet 5.5 · XHigh',
   )
   expect(chipText()).toBe('◆ Control Panel')
-})
-
-test('applies the effort pick; the model is switched with /model, never overridden per request', () => {
-  const req = { model: 'claude-sonnet-5-5', effort: 'medium' }
-  expect(applyChoice(req, { model: null, effort: null })).toEqual(req)
-  expect(applyChoice(req, { model: 'claude-opus-5-5', effort: 'max' })).toEqual({ model: 'claude-sonnet-5-5', effort: 'max' })
 })
 
 test('formats headings, names and descriptions', () => {

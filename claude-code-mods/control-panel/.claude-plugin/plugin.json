@@ -1,6 +1,6 @@
 {
   "name": "control-panel",
-  "version": "1.13.1",
+  "version": "1.14.0",
   "description": "Model, effort and settings. A footer button that opens a panel for picking the model and effort, switching Bare View and Guard Rails on or off, and quick actions",
   "author": {
     "name": "Teddymazrin"

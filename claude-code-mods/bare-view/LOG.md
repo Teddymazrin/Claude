@@ -1,5 +1,11 @@
 # Bare View log
 
+## 1.15.2 (2026-10-18)
+
+**Found in use:** a turn ended with only the Action Items box: no summary. Claude had planned 4 steps but advanced only 3, so the list was still open when it wrote the answer, and the answer was muted as working text for good.
+
+**Changed:** when a turn ends with an answer, any of its blocks that were muted are shown again (matched by the answer's text; if the list was left open and nothing matches, the last muted block). Working text from earlier in the turn stays hidden.
+
 ## 1.15.1 (2026-10-12)
 
 **Found in use:** a turn without a checklist left the band sitting at "No plan yet · 0%".

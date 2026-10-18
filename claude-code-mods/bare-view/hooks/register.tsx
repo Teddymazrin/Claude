@@ -360,6 +360,16 @@ export const isMuted = (verdicts: Map<string, boolean>, id: string, isWorkingTex
   return isWorkingText
 }
 
+// The text of each message muted in the turn now running, by id, so its answer can be shown again.
+const mutedThisTurn = new Map<string, string>()
+
+/**
+ * The muted messages that are the turn's final answer: their text is part of the answer the turn
+ * ended with. A step Claude never advanced left the list open while it wrote the answer.
+ */
+export const answerIds = (mutedTexts: ReadonlyMap<string, string>, answer: string) =>
+  [...mutedTexts].filter(([, text]) => text.trim() !== '' && answer.includes(text.trim())).map(([id]) => id)
+
 // Ids for calls that arrive without a tool_use_id.
 let callNo = 0
 
@@ -535,13 +545,27 @@ export const register: Register = on => {
       // The answer is in, so a last step left on Working was finished but never advanced.
       // An interrupted or failed turn keeps its list, to show where it stopped.
       if (e.reason === 'answer') {
+        const result = await next(e)
+        // An answer muted because a step was still open shows after all: every turn ends with its answer.
+        // Where no muted text matches it, the list was left open and the last one muted is the answer.
+        const matched = answerIds(mutedThisTurn, result.text)
+        const last = [...mutedThisTurn.keys()].at(-1)
+        const wasOpen = isInProgress(await read($, checklist))
+        const ids = matched.length > 0 ? matched : wasOpen && last ? [last] : []
+        mutedThisTurn.clear()
+        if (ids.length > 0) {
+          for (const id of ids) muted.set(id, false)
+          $.ui.invalidate('ui.render')
+        }
         const now = await $.clock.now()
         await update($, checklist, cur => {
           if (!cur || !cur.steps.some(s => s.status === 'active')) return cur
           const done = finishActive(cur)
           return isInProgress(done) ? done : { ...done, finishedAt: now }
         }).catch(() => {})
+        return result
       }
+      mutedThisTurn.clear()
     }
     return next(e)
   })
@@ -614,6 +638,7 @@ export const register: Register = on => {
     if (await read($, showTools)) return next(e)
     const isWorkingText = isInProgress(await read($, checklist)) && (await read($, activity)) !== null
     if (!isMuted(muted, e.requestId, isWorkingText)) return next(e)
+    if (isWorkingText) mutedThisTurn.set(e.requestId, e.props.text)
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
