@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer } from 'claude-code'
 
 import type { Note, Plan, Seen } from '../types'
-import { COLD_NOTE_WHY, COLD_WHY, coldKey, coldSwitchWhy, coldTitle, shouldAutoNote } from './cold'
+import { COLD_WHY, awayTitle, awayWhy, coldKey, coldSwitchWhy, coldTitle, notePreview, shouldAutoNote } from './cold'
 import {
   AMBER,
   COMMAND,
@@ -139,8 +139,9 @@ async function autoNote($: EngineInterface) {
     if (!reply.isAnswered || !reply.text.trim()) return
     const at = await $.clock.now()
     if (reply.usage.cache_read_input_tokens > 0 && last) await update($, lastCall, () => ({ at, model: last.model }))
+    // Shown in the away box above the prompt, which always has room; the side pane opens only on a wide terminal.
     await update($, note, () => ({ root, text: reply.text.trim(), at, auto: true }))
-    await show($, false)
+    $.ui.invalidate('ui.render')
   } finally {
     isWriting = false
   }
@@ -316,6 +317,7 @@ async function coldBox($: EngineInterface, e: Surface) {
   if (!last || !isCold(cache)) return null
   const key = coldKey(last, model)
   if ((await read($, coldDismissed)) === key) return null
+  if ((await read($, note))?.auto) return null
 
   const { Box, Text, Button } = $.ui.resolve(e)
   const dismiss = () => update($, coldDismissed, () => key)
@@ -325,9 +327,7 @@ async function coldBox($: EngineInterface, e: Surface) {
   }
   // Cold only because the model changed, and the old model's cache is still warm: go back there to write the note.
   const isSwitch = cache === 'cache cold · new model' && last.at + cacheTtlMs(m.plan) > now
-  // A note written since the last reply (by you, or while you were away): continue from it rather than write another.
-  const saved = await read($, note)
-  const ready = saved && saved.at >= last.at && !isSwitch ? saved : null
+  // A note written while you were away: the away box says so instead.
   const oldId = last.model
   const switchBack = async () => {
     await dismiss()
@@ -339,7 +339,7 @@ async function coldBox($: EngineInterface, e: Surface) {
         <Text>
           <Text color={RED}>⚠ </Text>
           <Text bold color={RED}>{coldTitle(cache)}</Text>
-          <Text dimColor>{isSwitch ? coldSwitchWhy(model ? modelName(model) : 'This model', modelName(oldId)) : ready ? COLD_NOTE_WHY : COLD_WHY}</Text>
+          <Text dimColor>{isSwitch ? coldSwitchWhy(model ? modelName(model) : 'This model', modelName(oldId)) : COLD_WHY}</Text>
         </Text>
         <Button key="cold-close" plain label="✕" hover={{ bold: true }} onPress={dismiss} />
       </Box>
@@ -347,10 +347,6 @@ async function coldBox($: EngineInterface, e: Surface) {
         {isSwitch ? (
           <Box key="cold-back-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
             <Button key="cold-back" plain label={`↩ Switch back to ${modelName(oldId)}`} hover={{ bold: true }} onPress={switchBack} />
-          </Box>
-        ) : ready ? (
-          <Box key="cold-note-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
-            <Button key="cold-note" plain label="↻ Continue from note" hover={{ bold: true }} onPress={() => startFresh($, ready.text)} />
           </Box>
         ) : (
           <Box key="cold-handoff-box" backgroundColor={ORANGE} paddingX={1} marginRight={1} hover={{ backgroundColor: RED }}>
@@ -360,6 +356,61 @@ async function coldBox($: EngineInterface, e: Surface) {
         <Box key="cold-keep-box" backgroundColor={SLATE} paddingX={1} hover={{ backgroundColor: ORANGE }}>
           <Button key="cold-keep" plain label="Keep going" hover={{ bold: true }} onPress={dismiss} />
         </Box>
+      </Box>
+    </Box>
+  )
+}
+
+/**
+ * Above the prompt: the note written while you were away, with what happened and the ways on. Shows until you
+ * continue from it, close it, or send a message.
+ */
+async function awayBox($: EngineInterface, e: Surface) {
+  const saved = await read($, note)
+  if (!saved?.auto) return null
+  const { cache } = await snapshot($)
+  const { Box, Text, Button } = $.ui.resolve(e)
+  const cold = isCold(cache)
+  let when: string
+  try {
+    when = new Date(saved.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  } catch {
+    when = new Date(saved.at).toISOString().slice(11, 16)
+  }
+  const { lines, more } = notePreview(saved.text)
+  const close = () => update($, note, n => (n ? { ...n, auto: false } : n))
+  const button = (key: string, label: string, fill: string, onPress: (press: { surface: Surface['surface'] }) => unknown) => (
+    <Box key={`${key}-box`} backgroundColor={fill} paddingX={1} marginRight={1} hover={{ backgroundColor: FRAME }}>
+      <Button key={key} plain label={label} hover={{ bold: true }} onPress={onPress} />
+    </Box>
+  )
+  return (
+    <Box key="away-note" flexDirection="column" borderStyle="round" borderColor={cold ? ORANGE : FRAME} paddingX={1}>
+      <Box key="away-header" flexDirection="row" justifyContent="space-between">
+        <Text>
+          <Text color={cold ? RED : VIOLET}>◈ </Text>
+          <Text bold color={cold ? RED : VIOLET}>{awayTitle(cold)}</Text>
+        </Text>
+        <Button key="away-close" plain label="✕" hover={{ bold: true }} onPress={close} />
+      </Box>
+      <Text key="away-why" dimColor>{awayWhy(cold, when, cache)}</Text>
+      <Box key="away-note-text" flexDirection="column" marginY={1} paddingLeft={2}>
+        {lines.map((line, i) => (
+          <Text key={`away-line-${i}`} wrap="truncate-end">{line}</Text>
+        ))}
+        {more > 0 ? <Text key="away-more" dimColor>{`… ${more} more line${more === 1 ? '' : 's'} · Open shows it all`}</Text> : null}
+      </Box>
+      <Box key="away-actions" flexDirection="row" flexWrap="wrap">
+        {button('away-continue', '↻ Continue from note', cold ? ORANGE : SLATE, async () => {
+          await close()
+          await startFresh($, saved.text)
+        })}
+        {button('away-copy', COPY_LABEL, SLATE, async press => {
+          const copied = await $.ui.copy({ text: copyPrompt(saved.text), surface: press.surface })
+          $.ui.toast(copied.isCopied ? 'Copied · open a new session and paste it to pick up where you left off' : 'Could not copy the prompt')
+        })}
+        {button('away-open', '▸ Open', SLATE, () => show($, true))}
+        {button('away-keep', 'Keep going', SLATE, close)}
       </Box>
     </Box>
   )
@@ -408,12 +459,14 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
+    const away = await awayBox($, e)
     const cold = await coldBox($, e)
     const handoff = await handoffBoxes($, e)
-    if (!cold && !handoff) return below
+    if (!away && !cold && !handoff) return below
     const { Box } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
+        {away}
         {cold}
         {handoff}
         {below}
@@ -462,6 +515,8 @@ export const register: Register = on => {
   // The main thread's response just landed: the cache was read or written now.
   on('turn.start', async ($, e, next) => {
     isBusy = true
+    // You're back and chatting: the away box has done its job. The note stays in the Handoff pane.
+    if ((await read($, note))?.auto) await update($, note, n => (n ? { ...n, auto: false } : n))
     return next(e)
   }).catch(($, e, next) => next(e))
 

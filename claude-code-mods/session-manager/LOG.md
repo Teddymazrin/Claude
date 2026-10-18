@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.1.1 (2026-10-18)
+
+**Asked for:** when the note was written while you were away, a clear message on return: the cache ran out, here is the handoff note. The side pane opens on its own only in a wide terminal, so it couldn't be counted on.
+
+**What changed:** a box above the prompt, which always shows, in the terminal and the app. Its title is **"Cache ran out while you were away · here is your handoff note"** (or **"You were away · a handoff note is ready"** while the cache is still warm). It says when the note was written and shows its first lines, with **↻ Continue from note**, **Copy prompt**, **▸ Open** (the whole note in the pane) and **Keep going**. It stays until you use it, close it, or send a message. While it shows, the plain cold-cache box doesn't.
+
 ## 1.1.0 (2026-10-18)
 
 **Asked for:** when the cache goes cold from being away, **Write handoff** re-reads the whole chat at full price, the very cost it should avoid.

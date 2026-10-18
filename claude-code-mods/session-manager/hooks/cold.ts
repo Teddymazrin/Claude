@@ -48,5 +48,19 @@ export const shouldAutoNote = (a: {
   return left <= AUTO_LEAD_MS && left > AUTO_MIN_LEFT_MS
 }
 
-/** The cold-cache box's line when a note was written before the cache went cold. */
-export const COLD_NOTE_WHY = ' · A handoff note was saved before it expired. Continue from it to skip re-reading this chat.'
+
+/** The away box's title: the cache ran out while you were away, or is still warm thanks to the note's write. */
+export const awayTitle = (isCacheCold: boolean) =>
+  isCacheCold ? 'Cache ran out while you were away · here is your handoff note' : 'You were away · a handoff note is ready'
+
+/** The away box's line under the title. */
+export const awayWhy = (isCacheCold: boolean, when: string, cache: string) =>
+  isCacheCold
+    ? `Written at ${when}, before the cache expired. Continue from it to skip re-reading this chat at full price.`
+    : `Written at ${when}. The chat is still saved (${cache}), so you can keep going here, or start fresh from the note.`
+
+/** The first lines of a note, for the away box: blank lines dropped, and how many more there are. */
+export const notePreview = (text: string, max = 8) => {
+  const lines = text.split('\n').filter(l => l.trim() !== '')
+  return { lines: lines.slice(0, max), more: Math.max(0, lines.length - max) }
+}
