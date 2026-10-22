@@ -7,7 +7,7 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | [Bare View](#bare-view) | 1.15.2 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.14.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Session Manager](#session-manager) | 1.1.6 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; writes a handoff note by itself before the cache runs out while you're away; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
-| [Action Items](#action-items) | 7.2.0 | Both | Everything Claude needs from you, decisions apart from actions, in one list above the prompt; unfinished asks carry over |
+| [Action Items](#action-items) | 8.0.0 | Both | Everything Claude needs from you, decisions apart from actions, in one list above the prompt; unfinished asks carry over |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
 | [Context Lens](#context-lens) | 1.2.0 | Both | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -185,7 +185,7 @@ Whenever Claude needs something from you, it goes in one box above the prompt in
 The box has two tabs, so it stays small:
 
 - **? Decide**: questions for you. The first waiting question opens with its options, and its line of context waits behind **▸ info**; the rest wait one line each, and answered ones fold into "✓ N answered". Click an option and your answer goes back to Claude as your reply; with several questions it waits until all are answered and sends them together. **Other…** (or **Answer…** for an open question) puts the question in the prompt box for you to type your own; sending it blank keeps the question open
-- **▶ Do**: things you do yourself, numbered. Each shows the task and the exact command with a **Copy** button. The action you're on shows its **Why:** and how to tell it worked right under it; the others keep theirs behind **▸ info** (click to open, again to close). **▸ all info** next to the tabs opens every one at once, and stays on in later sessions. Click the number to tick it off
+- **▶ Do**: things you do yourself, laid out as an STE procedure. One short intro says once what the steps do and what you need first. Then the numbered steps, each with its exact command and a **Copy** button. A step gets a second line only when the result matters: "Make sure that…". No info buttons. Click the number to tick it off
 
 The box opens on Decide while a question waits and moves to Do once they're answered; click a tab to switch.
 
@@ -195,7 +195,7 @@ The box opens on Decide while a question waits and moves to Do once they're answ
 
 **Updates on the fly:** when what Claude needs changes, it updates the box in the same turn. While the box holds open asks, Claude is reminded of them with each message.
 
-**Steps in STE:** every action is written in Simplified Technical English, like the `ste` skill, without loading that skill. The mod checks each step (no semicolons, contractions, should/may/might/could/would, check/verify/confirm/ensure, and a step is 20 words or fewer) and sends back any that break a rule. A risky step shows a **CAUTION:** (data, a service or access) or **WARNING:** (people) line before it.
+**Steps in STE:** the intro and every step are written in Simplified Technical English, like the `ste` skill, without loading that skill. The mod checks them (no semicolons, contractions, should/may/might/could/would, check/verify/confirm/ensure, a step 20 words or fewer, an intro 3 sentences or fewer, and a check that starts with "Make sure that") and sends back any that break a rule. A risky step shows a **CAUTION:** (data, a service or access) or **WARNING:** (people) line before it.
 
 **Only Claude fills it:** the box shows only what Claude put there itself. The mod doesn't guess from the reply, so nothing in the box is a false alarm. If Claude forgets the box, the steps are still in its reply.
 

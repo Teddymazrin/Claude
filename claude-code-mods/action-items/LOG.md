@@ -1,5 +1,16 @@
 # Action Items log
 
+## 8.0.0 (2026-10-22)
+
+**Asked for:** the info on each step is noisy. Keep it clean, with the plain simplicity of ASD-STE100. Picked: the STE procedure layout.
+
+**Changed:**
+- The Do tab reads like an STE procedure: one short intro (1 to 3 sentences) says once what the steps do and what you need first, then the numbered steps
+- Each step is its command line, plus one "Make sure that…" line only when the result matters, plus the command with Copy. CAUTION and WARNING still sit before their step
+- Removed each step's Why and how-to, the step **▸ info** buttons, the auto-opened info from 7.2 and the **all info** toggle. Questions keep their context behind **▸ info**
+- The tool takes `intro` for the list and `check` for a step; `why` is no longer required. The mod checks both: an intro of 3 sentences or fewer in STE, and a check that starts with "Make sure that"
+- Steps saved by 7.2 and earlier keep their text and command; their old why and how-to no longer show
+
 ## 7.2.0 (2026-10-22)
 
 **Asked for:** (screenshot) going back and forth between **▸ info** and the task to get the whole picture is a pain.

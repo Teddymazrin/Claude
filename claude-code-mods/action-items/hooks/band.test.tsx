@@ -24,7 +24,8 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
     tool: 'mcp__action-items__action_items',
     title: 'Deploy',
     decisions: [{ question: 'Which region?', options: ['eastus', 'westeurope'] }],
-    actions: [{ text: 'Sign in to Azure', why: 'Lets the deploy reach your subscription', detail: 'A browser window opens. Pick your work account.', command: 'az login' }],
+    intro: 'These steps deploy the app to your subscription.',
+    actions: [{ text: 'Sign in to Azure', check: 'Make sure that the browser shows your work account.', command: 'az login' }],
   } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
@@ -35,13 +36,10 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
     expect(await ui.find({ type: 'Text', text: /az login/ })).toBeUndefined()
     await ui.press({ key: 'tab-do' })
     expect(await ui.find({ type: 'Text', text: /az login/ })).toBeDefined()
-    // The action you are on shows its why and how-to by itself; info folds them away and back.
-    expect(await ui.find({ type: 'Text', text: /Pick your work account/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeDefined()
-    await ui.press({ key: 'info-5000-1' })
-    expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeUndefined()
-    await ui.press({ key: 'info-5000-1' })
-    expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeDefined()
+    // An STE procedure: the intro once, then the step, its check and its command. No info buttons.
+    expect(await ui.find({ type: 'Text', text: 'These steps deploy the app to your subscription.' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Make sure that the browser shows your work account/ })).toBeDefined()
+    expect(await ui.find({ key: 'info-5000-1' })).toBeUndefined()
     await ui.press({ key: 'tab-decide' })
     await ui.unmount()
   }
@@ -102,35 +100,29 @@ test('a typed reply keeps unanswered questions until Claude clears them', async 
   await after.unmount()
 })
 
-test('info opens only on the action you are on; a box too short folds the other actions to one row', async ($, on) => {
+test('a box too short folds the other actions to one row', async ($, on) => {
   on('clock.now', () => ({ value: 9_000 }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  const actions = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i + 1}`, why: `Why ${i + 1}`, detail: `How to do step ${i + 1}`, command: `run-${i + 1}` }))
+  const actions = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i + 1}`, check: `Make sure that step ${i + 1} works.`, command: `run-${i + 1}` }))
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Long', actions } as never)
   const tall = { ...BAND, props: { ...BAND.props, maxRows: 60, scroll: { offset: 0, bodyRows: 60 } } }
   const short = { ...BAND, props: { ...BAND.props, maxRows: 12, scroll: { offset: 0, bodyRows: 12 } } }
   for (const surface of SURFACES) {
-    // Room for all of it: every task and command, but no why or how-to until info is opened.
+    // Room for all of it: every step with its check and command.
     const full = await $.ui.mount({ plugin: 'action-items', surface, ...tall } as never)
     expect(await full.find({ type: 'Text', text: /run-6/ })).toBeDefined()
-    expect(await full.find({ type: 'Text', text: /Why 1/ })).toBeDefined()
-    expect(await full.find({ type: 'Text', text: /Why 6/ })).toBeUndefined()
-    expect(await full.find({ type: 'Text', text: /How to do step 6/ })).toBeUndefined()
-    await full.press({ key: 'info-9000-5' })
-    expect(await full.find({ type: 'Text', text: /Why 6/ })).toBeDefined()
-    expect(await full.find({ type: 'Text', text: /How to do step 6/ })).toBeDefined()
-    expect(await full.find({ type: 'Text', text: /Why 5/ })).toBeUndefined()
-    await full.press({ key: 'info-9000-5' })
+    expect(await full.find({ type: 'Text', text: /step 6 works/ })).toBeDefined()
     await full.unmount()
-    // 12 rows: the next action keeps its command; the rest fold to one row with theirs and Copy.
+    // 12 rows: the next action keeps its check and command; the rest fold to one row with theirs and Copy.
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...short } as never)
     expect(await ui.find({ key: 'open-9000-5' })).toBeDefined()
     expect(await ui.find({ key: 'copy-9000-5' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^run-6$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Why [2-6]/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /step 1 works/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /step 6 works/ })).toBeUndefined()
     await ui.unmount()
   }
   // Ticking step 1 folds it into "1 done".
@@ -174,46 +166,6 @@ test('one question at a time: the first waiting one opens, its context behind in
   expect(await ui.find({ type: 'Text', text: /1 answered/ })).toBeDefined()
   expect(await ui.find({ key: 'dinfo-11000-1' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /about second/ })).toBeDefined()
-  await ui.unmount()
-})
-
-test('opening info on one action leaves the others closed', async ($, on) => {
-  on('clock.now', () => ({ value: 13_000 }))
-  on('ui.render', ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box />
-  })
-  const actions = [1, 2, 3].map(n => ({ text: `Task ${n}`, why: `Reason ${n}`, detail: `Howto ${n}`, command: `cmd-${n}` }))
-  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Mid', actions } as never)
-  const mid = { ...BAND, props: { ...BAND.props, maxRows: 16, scroll: { offset: 0, bodyRows: 16 } } }
-  for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'action-items', surface, ...mid } as never)
-    for (const n of [1, 2, 3]) expect(await ui.find({ type: 'Text', text: new RegExp(`cmd-${n}`) })).toBeDefined()
-    await ui.press({ key: 'info-13000-1' })
-    expect(await ui.find({ type: 'Text', text: /Reason 2/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Howto 2/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Reason 3/ })).toBeUndefined()
-    await ui.press({ key: 'info-13000-1' })
-    await ui.unmount()
-  }
-})
-
-test('all info shows every why and how-to at once, and is remembered', async ($, on) => {
-  on('clock.now', () => ({ value: 14_000 }))
-  on('ui.render', ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box />
-  })
-  const actions = [1, 2, 3].map(n => ({ text: `Task ${n}`, why: `Reason ${n}`, detail: `Howto ${n}` }))
-  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'All', actions } as never)
-  const tall = { ...BAND, props: { ...BAND.props, maxRows: 40, scroll: { offset: 0, bodyRows: 40 } } }
-  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...tall } as never)
-  expect(await ui.find({ type: 'Text', text: /Reason 3/ })).toBeUndefined()
-  await ui.press({ key: 'info-all' })
-  for (const n of [1, 2, 3]) expect(await ui.find({ type: 'Text', text: new RegExp(`Howto ${n}`) })).toBeDefined()
-  await ui.press({ key: 'info-all' })
-  expect(await ui.find({ type: 'Text', text: /Reason 3/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /Reason 1/ })).toBeDefined()
   await ui.unmount()
 })
 

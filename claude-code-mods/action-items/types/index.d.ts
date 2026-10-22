@@ -17,9 +17,10 @@ export type Decision = {
 export type Action = {
   kind: 'do'
   text: string
-  /** What it gets done or what you are checking for. */
+  /** STE's check on the result, one sentence starting "Make sure that". */
+  check?: string
+  /** From 7.2 and earlier: the reason and the how-to, no longer shown. */
   why?: string
-  /** How to do it and what you should see when it worked. */
   detail?: string
   command?: string
   /** STE safety notices, shown before the step: risk to people, and risk to data, a service or access. */
@@ -34,6 +35,8 @@ export type Item = Decision | Action
 export type StepSet = {
   id: string
   title: string
+  /** What the steps do and what you need first, said once (STE procedure intro). */
+  intro?: string
   items: Item[]
   at: number
   /** True once the decisions' answers went back to Claude. */
@@ -54,8 +57,6 @@ declare module 'claude-code' {
       showDone: boolean
       /** Info opened by hand ("a:<set id>:<index>", "d:..."), or closed by hand ("x:a:...") where it opens by itself. */
       info: string[]
-      /** Info shown on every ask at once; remembered across sessions. */
-      infoAll: boolean
       /** True once a system prompt this session carries the instructions, so prompts skip the reminder. */
       composed: boolean
       /** True once /action-items opened the box mid-turn; while Claude works it folds to one line otherwise. */
