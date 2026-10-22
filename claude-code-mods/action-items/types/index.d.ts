@@ -20,6 +20,9 @@ export type Action = {
   /** How to do it and what you should see when it worked. */
   detail?: string
   command?: string
+  /** STE safety notices, shown before the step: risk to people, and risk to data, a service or access. */
+  warning?: string
+  caution?: string
   isDone: boolean
 }
 export type Item = Decision | Action

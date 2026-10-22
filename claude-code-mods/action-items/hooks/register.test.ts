@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, boxNote, clearTitles, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
+import { addSet, boxNote, steProblems, steWords, clearTitles, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -12,12 +12,12 @@ const parsed = (input: Record<string, unknown>) => {
 test('parses decisions and actions, decisions first', () => {
   const set = parsed({
     title: 'Deploy',
-    actions: [{ text: 'Sign in to Azure', why: 'So the script can reach Azure', command: 'Connect-AzAccount' }, { text: 'Check the output', why: 'Confirms it worked', detail: ' Shows 3 rows ', command: '  ' }],
+    actions: [{ text: 'Sign in to Azure', why: 'So the script can reach Azure', command: 'Connect-AzAccount' }, { text: 'Make sure that the output is correct', why: 'Shows that it worked', detail: ' Shows 3 rows ', command: '  ' }],
     decisions: [{ question: 'Which region?', detail: 'Closest to users', options: ['eastus', ' ', 'westeurope'] }],
   })
   expect(set.items[0]).toEqual({ kind: 'decide', text: 'Which region?', detail: 'Closest to users', options: ['eastus', 'westeurope'] })
   expect(set.items[1]).toEqual({ kind: 'do', text: 'Sign in to Azure', why: 'So the script can reach Azure', command: 'Connect-AzAccount', isDone: false })
-  expect(set.items[2]).toEqual({ kind: 'do', text: 'Check the output', why: 'Confirms it worked', detail: 'Shows 3 rows', isDone: false })
+  expect(set.items[2]).toEqual({ kind: 'do', text: 'Make sure that the output is correct', why: 'Shows that it worked', detail: 'Shows 3 rows', isDone: false })
 })
 
 test('takes the older `steps` as actions; rejects empty or broken sets', () => {
@@ -182,4 +182,28 @@ test('a folded command shows its first line that runs, not a comment', () => {
   expect(commandPreview('# All tests\npwsh -File t.ps1\n\n# More\npwsh x')).toBe('pwsh -File t.ps1')
   expect(commandPreview('az login')).toBe('az login')
   expect(commandPreview('# only a comment')).toBe('# only a comment')
+})
+
+test('new actions are held to Simplified Technical English, with every problem in one message', () => {
+  const bad = parseSet({ title: 'T', actions: [{ text: "Check it's done; then you should restart", why: 'It has been broken', command: 'x; y' }] }, '1', 0)
+  expect(bad).toContain('not in Simplified Technical English')
+  expect(bad).toContain('a semicolon')
+  expect(bad).toContain('a contraction')
+  expect(bad).toContain('"should"')
+  expect(bad).toContain('make sure that')
+  expect(bad).toContain('`why` has the present perfect')
+  // Code, quotes and the command are left alone; a clean action passes.
+  expect(steProblems('Run `az login; az account show` and select "Don\'t ask again"', 20)).toEqual([])
+  expect(steProblems('May 5 is the date.', 25)).toEqual([])
+  expect(steWords('Run `a b c` in the "Admin center" (the portal)')).toBe(6)
+  expect(steProblems(Array.from({ length: 21 }, () => 'word').join(' '), 20)).toEqual(['a sentence over 20 words'])
+  // Two short sentences are fine; the limit is per sentence.
+  expect(steProblems(`${Array.from({ length: 15 }, () => 'word').join(' ')}. ${Array.from({ length: 15 }, () => 'word').join(' ')}.`, 20)).toEqual([])
+  // The older `steps` form is not checked.
+  expect(typeof parseSet({ title: 'T', steps: [{ text: "Check it's done" }] }, '1', 0)).toBe('object')
+})
+
+test('caution and warning are kept on the action', () => {
+  const set = parsed({ title: 'T', actions: [{ text: 'Erase the vault', why: 'Frees the space', caution: 'Do not erase the vault unless you are sure. You cannot undo this step.' }] })
+  expect(set.items[0]).toMatchObject({ caution: 'Do not erase the vault unless you are sure. You cannot undo this step.' })
 })

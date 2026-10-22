@@ -24,7 +24,7 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
     tool: 'mcp__action-items__action_items',
     title: 'Deploy',
     decisions: [{ question: 'Which region?', options: ['eastus', 'westeurope'] }],
-    actions: [{ text: 'Sign in to Azure', why: 'Lets the deploy reach your subscription', detail: 'A browser window opens; pick your work account', command: 'az login' }],
+    actions: [{ text: 'Sign in to Azure', why: 'Lets the deploy reach your subscription', detail: 'A browser window opens. Pick your work account.', command: 'az login' }],
   } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
@@ -38,7 +38,7 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
     // Why and how-to wait behind info until it is pressed, and fold away again.
     expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeUndefined()
     await ui.press({ key: 'info-5000-1' })
-    expect(await ui.find({ type: 'Text', text: /pick your work account/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Pick your work account/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeDefined()
     await ui.press({ key: 'info-5000-1' })
     expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeUndefined()
@@ -54,6 +54,25 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
   await ui.press({ key: 'tick-5000-1' })
   expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
   await ui.unmount()
+})
+
+test('a caution shows before its step, outside info', async ($, on) => {
+  on('clock.now', () => ({ value: 50_000 }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await $.tool.call({
+    tool: 'mcp__action-items__action_items',
+    title: 'Purge',
+    actions: [{ text: 'Purge the vault', why: 'Frees the name', caution: 'Do not purge the vault unless you are sure. You cannot undo this step.', command: 'az keyvault purge' }],
+  } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
+    expect(await ui.find({ type: 'Text', text: 'CAUTION: ' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /You cannot undo this step/ })).toBeDefined()
+    await ui.unmount()
+  }
 })
 
 test('a typed reply keeps unanswered questions until Claude clears them', async ($, on) => {

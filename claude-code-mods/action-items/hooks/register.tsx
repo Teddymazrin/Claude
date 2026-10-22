@@ -35,6 +35,7 @@ const C = {
   chip: '#2c2c2e',
   btn: '#2c2c2e',
   btnHover: '#c4623f',
+  warning: '#ff453a',
 }
 
 const INSTRUCTIONS = `# Action Items box
@@ -42,10 +43,12 @@ The user keeps an Action Items box above the prompt for everything you need from
 - Whenever you end a turn needing something from the user, call \`${TOOL_ID}\` before your final answer (load it with ToolSearch "select:${TOOL_ID}" if it is not loaded). That covers:
   - \`decisions\`: any question you want answered, a choice between approaches, information only they have, a go-ahead. Give 2-4 short \`options\` when the answer is one of a few choices; they click one and it comes back to you as their reply. Leave \`options\` out for an open question. Add a \`detail\` line when the choice needs context (what each option means, what you'd recommend).
   - \`actions\`: what they must do themselves: run a script, fill in a parameter, sign in, check a portal setting, restart something. Only what actually needs them; never filler like "look over the code" or "test the button" with nothing specific to find. Write each so they could do it without reading your reply:
-    - \`text\`: the action, imperative and specific: where and what ("Run the setup script in PowerShell", not "Check it works").
-    - \`why\` (required): one line on what it gets done or what they are checking for, in their terms ("Gives the new app Reader access on every subscription"). If you can't say why, leave the action out.
-    - \`detail\`: one line on how, and what they should see when it worked ("Prints 3 subscriptions, each marked Assigned").
+    - \`text\`: one step, as a command, 20 words or fewer: where and what ("Run the setup script in PowerShell", not "Check it works"). A condition goes first: "If the light is red, stop the pump."
+    - \`why\` (required): one sentence on what it gets done or what they look for, in their terms ("Gives the new app Reader access on every subscription"). If you cannot say why, leave the action out.
+    - \`detail\`: one sentence on how, and what they see when it worked ("Prints 3 subscriptions. Each one shows Assigned.").
     - \`command\`: the exact command where there is one (real paths, placeholders in <angle brackets>).
+    - \`caution\` (risk to data, a service or access) or \`warning\` (risk to people): the command or condition first, then the risk. Say "You cannot undo this step." when that is true.
+  - Write every action in Simplified Technical English (ASD-STE100): simple common words, one name for one thing, keep "the", "a" and "that". \`why\`, \`detail\` and notices: 25 words or fewer. Never contractions, semicolons, should/may/might/could/would (use must/can/will), present perfect, "-ing" verbs, passive voice, phrasal verbs ("set up": install or configure), check/verify/confirm/ensure (write "make sure that"), e.g./i.e./etc., or simply/just/easily. Commands, paths, on-screen labels, names and numbers stay exactly as they are.
 - One call per turn with a short \`title\` (the task), all decisions and actions together.
 - The box never updates itself: call the tool again in any turn where what you need changes, even while it still holds older asks. Same \`title\` makes a new latest version of that set (what they already ticked or answered carries over; the earlier version stays for them to look back at); a new title adds a set. Put titles of sets that no longer apply in \`clear\`: they are marked replaced, never deleted. Only the user deletes sets.
 - When the user answers a waiting question by typing instead of clicking, you're told which are still open: put their numbers in \`answered\` with that \`title\`, in the same call as any new decisions and actions.
@@ -60,6 +63,32 @@ export const REMINDER = `[Action Items] Anything you need from the user (decisio
 export const withReminder = (context: readonly string[], isComposed: boolean) => (isComposed ? [...context] : [...context, REMINDER])
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+
+// Simplified Technical English (ASD-STE100), the rules a machine can check without a model call.
+const STE_BANNED: [RegExp, string][] = [
+  [/;/, 'a semicolon (write two sentences)'],
+  [/\b\w+n['’]t\b|['’](re|ll|ve|d|m)\b|\b(it|that|there|here|what|let)['’]s\b/i, 'a contraction'],
+  [/\b(should|might|could|would)\b|\bmay\b/, '"should", "may", "might", "could" or "would" (use must, can or will)'],
+  [/\b(has|have|had) been\b/i, 'the present perfect'],
+  [/\b(verify|verifies|confirm|confirms|ensure|ensures)\b|^check\b|[,.:] check\b/i, 'check/verify/confirm/ensure (write "make sure that")'],
+  [/\be\.g\.|\bi\.e\.|\betc\b/i, 'e.g., i.e. or etc.'],
+  [/\b(simply|just|easily|quickly)\b/i, 'simply, just, easily or quickly (delete it)'],
+  [/\bset up\b/i, '"set up" (write install or configure)'],
+]
+
+/** Words for STE's limit: code, a quote, a bracketed aside or a hyphenated word counts as one. */
+export const steWords = (t: string) =>
+  t.replace(/`[^`]*`/g, 'X').replace(/"[^"]*"/g, 'X').replace(/\([^)]*\)/g, 'X').split(/\s+/).filter(Boolean).length
+
+/** What breaks STE in one field, or nothing. Commands are never checked: they stay exactly as they are. */
+export const steProblems = (t: string, limit: number) => {
+  // Code and quoted labels stay exactly as they are, so the word rules skip them.
+  const plain = t.replace(/`[^`]*`/g, 'X').replace(/"[^"]*"/g, 'X')
+  const found = STE_BANNED.filter(([re]) => re.test(plain)).map(([, what]) => what)
+  // Per sentence: one step is one sentence of `limit` words or fewer.
+  if (t.split(/(?<=[.!?])\s+/).some(sentence => steWords(sentence) > limit)) found.unshift(`a sentence over ${limit} words`)
+  return found
+}
 
 export const parseSet = (input: Record<string, unknown>, id: string, at: number): StepSet | string => {
   const title = str(input.title)
@@ -76,7 +105,7 @@ export const parseSet = (input: Record<string, unknown>, id: string, at: number)
   // `steps` is the older name for actions.
   const actions = Array.isArray(input.actions) ? input.actions : Array.isArray(input.steps) ? input.steps : []
   for (const raw of actions) {
-    const s = raw as { text?: unknown; why?: unknown; detail?: unknown; command?: unknown }
+    const s = raw as { text?: unknown; why?: unknown; detail?: unknown; command?: unknown; caution?: unknown; warning?: unknown }
     const text = str(s?.text)
     if (!text) return 'Each action needs a `text`.'
     const why = str(s.why)
@@ -84,7 +113,24 @@ export const parseSet = (input: Record<string, unknown>, id: string, at: number)
     if (!why && Array.isArray(input.actions)) return `Action "${text}" needs a \`why\`: what it gets done or what the user checks for. If there is no clear why, leave it out.`
     const detail = str(s.detail)
     const command = str(s.command)
-    items.push({ kind: 'do', text, ...(why ? { why } : {}), ...(detail ? { detail } : {}), ...(command ? { command } : {}), isDone: false })
+    const caution = str(s.caution)
+    const warning = str(s.warning)
+    // New actions are held to STE; one message lists every problem, so one retry fixes them all.
+    if (Array.isArray(input.actions)) {
+      const fields: [string, string, number][] = [['text', text, 20], ['why', why, 25], ['detail', detail, 25], ['caution', caution, 25], ['warning', warning, 25]]
+      const problems = fields.flatMap(([name, value, limit]) => (value ? steProblems(value, limit).map(p => `\`${name}\` has ${p}`) : []))
+      if (problems.length > 0) return `Action "${text}" is not in Simplified Technical English: ${problems.join('; ')}. Rewrite it and call again.`
+    }
+    items.push({
+      kind: 'do',
+      text,
+      ...(why ? { why } : {}),
+      ...(detail ? { detail } : {}),
+      ...(command ? { command } : {}),
+      ...(warning ? { warning } : {}),
+      ...(caution ? { caution } : {}),
+      isDone: false,
+    })
   }
   if (items.length === 0) return 'Give at least one entry in `decisions` or `actions`.'
   return { id, title, items, at }
@@ -233,6 +279,8 @@ export const doRows = (list: readonly Action[], columns: number, level: DoLevel,
   shown.forEach((a, i) => {
     rows += (level === 0 && i > 0 ? 1 : 0) + lines(a.text)
     if (a.isDone) return
+    if (a.warning) rows += lines(`WARNING: ${a.warning}`)
+    if (a.caution) rows += lines(`CAUTION: ${a.caution}`)
     const isNext = a === next
     if (a.why && isInfo(a)) rows += lines(`Why: ${a.why}`)
     if (a.detail && isInfo(a)) rows += lines(a.detail)
@@ -432,6 +480,23 @@ function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, ind
   const key = `${set.id}-${index}`
   return (
     <Box key={`a-${key}`} flexDirection="column" marginTop={isSpaced ? 1 : 0}>
+      {/* STE puts a safety notice before its step, and it never hides behind info. */}
+      {!a.isDone && a.warning && (
+        <Box key={`warn-${key}`} marginLeft={4}>
+          <Text>
+            <Text bold color={C.warning}>{'WARNING: '}</Text>
+            <Text>{a.warning}</Text>
+          </Text>
+        </Box>
+      )}
+      {!a.isDone && a.caution && (
+        <Box key={`caution-${key}`} marginLeft={4}>
+          <Text>
+            <Text bold color={C.title}>{'CAUTION: '}</Text>
+            <Text>{a.caution}</Text>
+          </Text>
+        </Box>
+      )}
       <Box flexDirection="row">
         <Box width={4} flexShrink={0}>
           <Button
@@ -542,10 +607,12 @@ export const register: Register = on => {
             items: {
               type: 'object',
               properties: {
-                text: { type: 'string', description: 'The action: imperative, specific about where and what.' },
+                text: { type: 'string', description: 'One step as a command, in Simplified Technical English, 20 words or fewer.' },
                 why: { type: 'string', description: 'What it gets done or what they are checking for, in their terms. No clear why: leave the action out.' },
                 detail: { type: 'string', description: 'One line on how to do it and what they should see when it worked.' },
                 command: { type: 'string', description: 'The exact command to run for this action, if any.' },
+                caution: { type: 'string', description: 'STE CAUTION, shown before the step: a risk to data, a service or access. Command or condition first, then the risk.' },
+                warning: { type: 'string', description: 'STE WARNING, shown before the step: a risk to people. Command or condition first, then the risk.' },
               },
               required: ['text', 'why'],
             },

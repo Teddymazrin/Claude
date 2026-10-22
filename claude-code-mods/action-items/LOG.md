@@ -1,5 +1,16 @@
 # Action Items log
 
+## 6.8.0 (2026-10-22)
+
+**Asked for:** steps in the box should follow the `ste` skill's format, without loading the whole skill and filling the context window.
+
+**Changed:**
+- Actions are written in Simplified Technical English (ASD-STE100). The skill's rules for steps are cut down to a few lines in the mod's instructions (about 170 tokens, loaded once per session and cached), instead of the skill's 2,700 words
+- The mod checks each new action itself, with no model call: no semicolons, contractions, should/may/might/could/would, present perfect, check/verify/confirm/ensure, e.g./i.e./etc., simply/just/easily/quickly or "set up"; a step's sentence 20 words or fewer, why, how-to and notices 25. Commands, code, quoted labels and asides in brackets are left alone
+- An action that breaks a rule is sent back with every problem in one message, so one retry fixes it. An action that passes costs nothing extra
+- New `caution` (risk to data, a service or access) and `warning` (risk to people) on an action, shown before the step as **CAUTION:** in orange and **WARNING:** in red. They never hide behind info
+- Not checked by the mod (the instructions cover these): "-ing" verbs, passive voice, one action per step, and a condition before its command
+
 ## 6.7.0 (2026-10-22)
 
 **Asked for:** old steps weren't kept; the box cleared them by itself.
