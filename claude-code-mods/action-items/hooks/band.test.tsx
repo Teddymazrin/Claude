@@ -192,9 +192,30 @@ test('the latest steps always show, even with an older question still waiting', 
   expect(await ui.find({ type: 'Text', text: /Run the new step/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'LATEST STEPS' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Still waiting\?/ })).toBeUndefined()
-  // Done with the latest, the box closes instead of pulling the older set back up.
+  // Done with the latest, the box stays on it (older steps still open behind ◀), never pulling the older set forward.
   await ui.press({ key: 'tick-21000-0' })
-  expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Newer' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Still waiting\?/ })).toBeUndefined()
+  await ui.press({ key: 'nav-older' })
+  expect(await ui.find({ type: 'Text', text: /Still waiting\?/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('an update with the same title keeps the earlier version behind ◀, marked replaced', async ($, on) => {
+  let now = 40_000
+  on('clock.now', () => ({ value: now }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Setup', actions: [{ text: 'First step', why: 'w' }] } as never)
+  now = 41_000
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Setup', actions: [{ text: 'New step', why: 'w' }] } as never)
+  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
+  expect(await ui.find({ type: 'Text', text: /New step/ })).toBeDefined()
+  await ui.press({ key: 'nav-older' })
+  expect(await ui.find({ type: 'Text', text: /First step/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'OLDER STEPS · 2 of 2 · replaced' })).toBeDefined()
   await ui.unmount()
 })
 

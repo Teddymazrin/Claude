@@ -50,12 +50,14 @@ test('a typed answer is left out of the clicked answers', () => {
   expect(answerText(list[0]!)).toBe('T:\n- Q1? → x')
 })
 
-test('keeps the newest first and replaces a same-titled set', () => {
+test('keeps the newest first; a same-titled set becomes the latest, the earlier one kept as replaced', () => {
   const mk = (id: string, title: string): StepSet => ({ id, title, at: 0, items: [{ kind: 'do', text: 'a', isDone: false }] })
   let list = addSet([], mk('1', 'A'))
   list = addSet(list, mk('2', 'B'))
   list = addSet(list, mk('3', 'A'))
-  expect(list.map(s => s.id)).toEqual(['3', '2'])
+  expect(list.map(s => s.id)).toEqual(['3', '2', '1'])
+  expect(list.map(s => !!s.isSuperseded)).toEqual([false, false, true])
+  expect(isOpen(list[2]!)).toBe(false)
 })
 
 test('a same-titled set updates in place: ticked actions and answers stay, new asks are added', () => {
@@ -65,7 +67,9 @@ test('a same-titled set updates in place: ticked actions and answers stay, new a
   const update = parseSet({ title: 'Deploy', decisions: [{ question: 'Region?', options: ['a', 'b'] }], actions: [{ text: 'Sign in', why: 'w' }, { text: 'Run the new script', why: 'w2' }] }, '2', 2_000)
   if (typeof update === 'string') throw new Error(update)
   list = addSet(list, update)
-  expect(list.length).toBe(1)
+  // The earlier version stays behind it, replaced.
+  expect(list.length).toBe(2)
+  expect(list[1]!.isSuperseded).toBe(true)
   expect(list[0]!.id).toBe('2')
   expect(list[0]!.items.map(i => i.text)).toEqual(['Region?', 'Sign in', 'Run the new script'])
   expect(list[0]!.items[1]).toMatchObject({ isDone: true })
@@ -73,10 +77,12 @@ test('a same-titled set updates in place: ticked actions and answers stay, new a
   expect(countText(list[0]!)).toBe('1 to do')
 })
 
-test('clear drops sets by title; the box note lists what is still open', () => {
+test('clear marks sets replaced, never deletes them; the box note lists what is still open', () => {
   const a = parsed({ title: 'A', actions: [{ text: 'x', why: 'w' }] })
   const b: StepSet = { ...parsed({ title: 'B', decisions: [{ question: 'Q?' }] }), id: '2' }
-  expect(clearTitles([b, a], ['A']).map(s => s.title)).toEqual(['B'])
+  const marked = clearTitles([b, a], ['A'])
+  expect(marked.map(s => s.title)).toEqual(['B', 'A'])
+  expect(isOpen(marked[1]!)).toBe(false)
   expect(boxNote([b, a])).toContain('"B" (1 to decide), "A" (1 to do)')
   expect(boxNote([])).toBeUndefined()
 })

@@ -31,6 +31,8 @@ export type StepSet = {
   at: number
   /** True once the decisions' answers went back to Claude. */
   isSent?: boolean
+  /** True once a newer version or Claude's `clear` replaced it: kept to look back at, no longer open. */
+  isSuperseded?: boolean
 }
 
 declare module 'claude-code' {

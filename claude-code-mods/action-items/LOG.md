@@ -1,5 +1,18 @@
 # Action Items log
 
+## 6.7.0 (2026-10-22)
+
+**Asked for:** old steps weren't kept; the box cleared them by itself.
+
+**Cause:** three things deleted or hid them without you pressing Clear. An update with the same title replaced the set, so the steps Claude left out were gone. Claude's `clear` deleted whole sets, and the mod nudged it to use it. And finishing the latest set closed the box, so older sets still open were out of reach.
+
+**Changed:**
+- Only you delete sets now (Clear, Clear all, `/action-items clear`)
+- An update with the same title becomes the new latest; the earlier version stays behind ◀, labelled "replaced"
+- Claude's `clear` marks a set replaced instead of deleting it. Replaced sets don't count as open, so they never nag
+- The box keeps up to 20 sets, up from 8
+- Finishing the latest set keeps the box on it while older steps are still open behind ◀; the box closes only when nothing in it is open
+
 ## 6.6.1 (2026-10-22)
 
 **Found after updating:** the box never said "Latest steps". The row only showed when the box held more than one set.
