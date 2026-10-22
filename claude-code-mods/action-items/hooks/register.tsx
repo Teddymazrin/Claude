@@ -776,8 +776,8 @@ export const register: Register = on => {
       </Box>
     )
 
+    // Do: drawn whole when it fits; else ticked ones fold and only the next open action keeps
     // its check and command.
-    // its command. Why and how-to show only where the person opened an action's info.
     // Three rows stay free for Bare View's finished checklist, folded to one line beside it.
     const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3, set.intro)
     const nextOpen = doing.find(x => !x.it.isDone)?.i
