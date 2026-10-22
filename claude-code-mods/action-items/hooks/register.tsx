@@ -275,24 +275,44 @@ async function show($: EngineInterface, set: StepSet) {
   await update($, tab, () => null)
 }
 
-/** The set to show next: the newest with a question waiting, else the newest with something to do. */
-export const nextSet = (list: readonly StepSet[]) => list.find(s => pendingDecisions(s).length > 0) ?? list.find(isOpen)
+/** The newest set with something still waiting on the person. */
+export const nextSet = (list: readonly StepSet[]) => list.find(isOpen)
 
-/** The set the box shows: the one asked for while it is still open, else the next one waiting. */
+/** The set being looked at: the one picked with the arrows, else the latest. */
+export const viewedSet = (list: readonly StepSet[], id: string | null) => list.find(s => s.id === id) ?? list[0]
+
+/**
+ * The set the box shows: the latest steps unless the person went back to older ones with the arrows.
+ * Once the latest is all done the box closes; it never falls back to an older set by itself.
+ */
 export const shownSet = (list: readonly StepSet[], id: string | null) => {
-  const asked = list.find(s => s.id === id)
-  return asked && isOpen(asked) ? asked : nextSet(list)
+  if (id === null) return undefined
+  const set = viewedSet(list, id)
+  if (!set || (set === list[0] && !isOpen(set))) return undefined
+  return set
+}
+
+/** The set one step older (`1`) or newer (`-1`) than `id`, or undefined past either end. */
+export const stepSet = (list: readonly StepSet[], id: string, by: 1 | -1) => {
+  const i = list.findIndex(s => s.id === id)
+  return i < 0 ? undefined : list[i + by]
+}
+
+/** "Latest steps", or "Older steps · 2 of 3" for one the arrows went back to. */
+export const placeLabel = (list: readonly StepSet[], id: string) => {
+  const i = list.findIndex(s => s.id === id)
+  return i <= 0 ? 'LATEST STEPS' : `OLDER STEPS · ${i + 1} of ${list.length}`
 }
 
 /** The line a folded action shows of its command: the first that runs, past blank lines and comments. */
 export const commandPreview = (command: string) =>
   command.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#') && !l.startsWith('//') && !/^rem\b/i.test(l)) ?? command.split('\n')[0]!
 
-// Clear drops the set shown for good, so the box moves on to the next one waiting or closes.
+// Clear drops the set shown for good; the box goes back to the latest steps, or closes.
 async function clearShown($: EngineInterface, id: string) {
   const left = await save($, l => clearSet(l, id))
   await update($, tab, () => null)
-  await update($, band, () => nextSet(left)?.id ?? null)
+  await update($, band, () => left[0]?.id ?? null)
 }
 
 async function clearAll($: EngineInterface) {
@@ -594,7 +614,7 @@ export const register: Register = on => {
     if (dropped.length > 0) {
       const left = await save($, l => clearTitles(l, dropped))
       const id = await read($, band)
-      if (!left.some(s => s.id === id)) await update($, band, () => nextSet(left)?.id ?? null)
+      if (!left.some(s => s.id === id)) await update($, band, () => left[0]?.id ?? null)
     }
     // Questions answered in chat, cleared first so an update in the same call keeps them answered.
     if (Array.isArray(input.answered)) {
@@ -627,7 +647,7 @@ export const register: Register = on => {
     const below = await next(e)
     const id = await read($, band)
     if (id === null || e.props.hasSurvey) return below
-    // The set asked for; once it is all done, the newest set still waiting on the person.
+    // The latest steps, or an older set the person went back to with the arrows.
     const list = await read($, sets)
     const set = shownSet(list, id)
     if (!set) return below
@@ -649,7 +669,14 @@ export const register: Register = on => {
         </Box>
       )
     }
-    const openCount = list.filter(isOpen).length
+    const older = stepSet(list, set.id, 1)
+    const newer = stepSet(list, set.id, -1)
+    const go = (to: StepSet | undefined) => async () => {
+      if (!to) return
+      await update($, tab, () => null)
+      await update($, band, () => to.id)
+    }
+    const hasNav = list.length > 1
     const decide = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Decision; i: number } => x.it.kind === 'decide')
     const doing = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Action; i: number } => x.it.kind === 'do')
     // One section at a time: the tab the person picked, else Decide while a question waits.
@@ -693,7 +720,7 @@ export const register: Register = on => {
     // Do: drawn whole when it fits; else ticked ones fold and only the next open action keeps
     // its command. Why and how-to show only where the person opened an action's info.
     // Three rows stay free for Bare View's finished checklist, folded to one line beside it.
-    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3, a => isInfo('a', set.items.indexOf(a)))
+    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3 - (hasNav ? 1 : 0), a => isInfo('a', set.items.indexOf(a)))
     const nextOpen = doing.find(x => !x.it.isDone)?.i
     const isDoneShown = await read($, showDone)
     const shown = level === 0 || isDoneShown ? doing : doing.filter(x => !x.it.isDone)
@@ -742,9 +769,9 @@ export const register: Register = on => {
             </Text>
             <Box key="band-buttons" flexDirection="row" flexShrink={0}>
               {/* Clear drops this set for good, so the box moves on instead of coming back to it. */}
-              {openCount > 1 && (
+              {list.length > 1 && (
                 <Box key="clear-all-box" marginRight={2}>
-                  <Button key="clear-all" plain dimColor label={`Clear all ${openCount}`} hover={{ bold: true }} onPress={() => clearAll($)} />
+                  <Button key="clear-all" plain dimColor label={`Clear all ${list.length}`} hover={{ bold: true }} onPress={() => clearAll($)} />
                 </Box>
               )}
               <Box key="clear-box" marginRight={2}>
@@ -753,6 +780,25 @@ export const register: Register = on => {
               <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
             </Box>
           </Box>
+          {/* Latest steps by default; ◀ goes back through older sets, ▶ forward to the latest again. */}
+          {hasNav && (
+            <Box key="nav" flexDirection="row">
+              <Box key="nav-older-box" flexShrink={0} marginRight={1}>
+                <Button key="nav-older" plain dimColor={!older} label="◀" hover={{ bold: true }} onPress={go(older)} />
+              </Box>
+              <Box key="nav-label-box" flexShrink={1} marginRight={1}>
+                <Text bold={!newer} color={newer ? C.done : C.title} wrap="truncate-end">{placeLabel(list, set.id)}</Text>
+              </Box>
+              <Box key="nav-newer-box" flexShrink={0}>
+                <Button key="nav-newer" plain dimColor={!newer} label="▶" hover={{ bold: true }} onPress={go(newer)} />
+              </Box>
+              {newer && (
+                <Box key="nav-latest-box" flexShrink={0} marginLeft={2}>
+                  <Button key="nav-latest" plain dimColor label="Back to latest" hover={{ bold: true }} onPress={go(list[0])} />
+                </Box>
+              )}
+            </Box>
+          )}
           <Box key="tabs" flexDirection="row" marginBottom={1}>
             {decide.length > 0 && tabChip('decide', '?', 'Decide', C.decide, waiting.length)}
             {doing.length > 0 && tabChip('do', '▶', 'Do', C.do, doing.length - doing.filter(x => x.it.isDone).length)}
@@ -775,11 +821,12 @@ export const register: Register = on => {
       return { text: 'Box emptied.' }
     }
     if (arg === 'clear') {
-      const shown = shownSet(await read($, sets), await read($, band))
+      const shown = viewedSet(await read($, sets), await read($, band))
       if (!shown) return { text: 'Nothing to clear.' }
       await clearShown($, shown.id)
       return { text: `Cleared ${shown.title}.` }
     }
+    // The latest steps; once those are done, the newest older set still open, shown as older.
     const open = nextSet(await read($, sets))
     if (!open) return { text: 'Nothing open: Claude needs nothing from you right now.' }
     await update($, band, () => open.id)

@@ -1,5 +1,18 @@
 # Action Items log
 
+## 6.6.0 (2026-10-22)
+
+**Asked for:** the box sometimes showed older action items. The latest steps should always show, labelled "Latest steps", with arrows to look back at older ones, and Clear kept.
+
+**Cause:** the box picked the newest set with a question waiting before the newest set, so an old question beat Claude's latest steps. Once a set was done it also fell back to an older one by itself.
+
+**Changed:**
+- The box always shows the latest set Claude gave. It no longer jumps to an older set on its own: once the latest is done, the box closes
+- A new row under the header, when there is more than one set: **◀ LATEST STEPS ▶**. ◀ goes back to older sets ("OLDER STEPS · 2 of 3"), ▶ comes forward again, and **Back to latest** jumps straight there
+- A new set from Claude always brings the box back to the latest, wherever you were
+- **Clear** drops the set you're looking at and goes back to the latest. **Clear all N** counts every set in the box
+- `/action-items` shows the latest if it's still open, else the newest older set still open
+
 ## 6.5.0 (2026-10-22)
 
 **Asked for:** the box doesn't update on the fly. With an older ask still in it, new steps didn't show up until you asked for the box again.
