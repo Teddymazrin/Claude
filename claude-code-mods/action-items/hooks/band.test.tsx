@@ -258,7 +258,7 @@ test('in a short box, clicking a folded action opens it in full', async ($, on) 
   await ui.unmount()
 })
 
-test('Clear empties the box', async ($, on) => {
+test('Mark as done ticks everything off and closes the box', async ($, on) => {
   let now = 1_000
   on('clock.now', () => ({ value: now }))
   on('ui.render', ($, e) => {
@@ -269,21 +269,24 @@ test('Clear empties the box', async ($, on) => {
   now = 2_000
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'New one', actions: [{ text: 'Do new', why: 'Test' }] } as never)
   const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
-  expect(await ui.find({ key: 'clear-all' })).toBeUndefined()
-  await ui.press({ key: 'clear' })
+  expect(await ui.find({ key: 'clear' })).toBeUndefined()
+  await ui.press({ key: 'done-all' })
   expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
   await ui.unmount()
   expect(await $.command.run({ command: 'action-items' } as never)).toEqual({ text: 'Nothing open: Claude needs nothing from you right now.' })
 })
 
-test('/action-items clear and hide work from the prompt, mid-turn too', async ($, on) => {
+test('/action-items done and hide work from the prompt, mid-turn too', async ($, on) => {
   let now = 1_000
   on('clock.now', () => ({ value: now }))
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'First', actions: [{ text: 'Do First', why: 'Test' }] } as never)
   expect(await $.command.run({ command: 'action-items', args: 'hide' } as never)).toEqual({ text: 'Box hidden. /action-items brings it back.' })
   expect(await $.command.run({ command: 'action-items', args: '' } as never)).toEqual({ text: 'Showing First (1 to do) above the prompt.' })
-  expect(await $.command.run({ command: 'action-items', args: 'clear' } as never)).toEqual({ text: 'Box emptied.' })
-  expect(await $.command.run({ command: 'action-items', args: 'clear all' } as never)).toEqual({ text: 'Box emptied.' })
+  expect(await $.command.run({ command: 'action-items', args: 'done' } as never)).toEqual({ text: 'Marked everything as done.' })
+  expect(await $.command.run({ command: 'action-items', args: '' } as never)).toEqual({ text: 'Nothing open: Claude needs nothing from you right now.' })
+  // The older name still works.
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Second', decisions: [{ question: 'Go?' }] } as never)
+  expect(await $.command.run({ command: 'action-items', args: 'clear' } as never)).toEqual({ text: 'Marked everything as done.' })
 })
 
 test('while Claude works the box folds to one line; /action-items opens it until the next prompt', async ($, on) => {

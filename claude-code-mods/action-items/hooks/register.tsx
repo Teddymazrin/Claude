@@ -347,10 +347,22 @@ export const shownSet = (list: readonly StepSet[], id: string | null) => (id ===
 export const commandPreview = (command: string) =>
   command.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#') && !l.startsWith('//') && !/^rem\b/i.test(l)) ?? command.split('\n')[0]!
 
-async function clearAll($: EngineInterface) {
-  await save($, () => [])
+/**
+ * Everything in the box marked done: actions ticked, waiting questions closed without an answer going
+ * to Claude. The box closes; the next call from Claude starts fresh, since finished asks drop off.
+ */
+export const markAllDone = (list: readonly StepSet[]) =>
+  list.map(s => ({
+    ...s,
+    isSent: true,
+    items: s.items.map(it =>
+      it.kind === 'do' ? { ...it, isDone: true } : it.answer !== undefined && !it.isTyping ? it : { ...it, answer: '(marked done)', isTyping: false, isDelivered: true },
+    ),
+  }))
+
+async function markDone($: EngineInterface) {
+  await save($, markAllDone)
   await update($, tab, () => null)
-  await update($, band, () => null)
 }
 
 /** The tab the box opens on: Decide while a question waits, Do after. */
@@ -617,8 +629,8 @@ export const register: Register = on => {
         required: ['title'],
       },
     })
-    // Immediate, so `clear` and `hide` work while Claude is still working, when the box's buttons wait for the turn to end.
-    await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you', argumentHint: '[clear | hide]', immediate: true })
+    // Immediate, so `done` and `hide` work while Claude is still working, when the box's buttons wait for the turn to end.
+    await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you', argumentHint: '[done | hide]', immediate: true })
     // Bring back this conversation's box when it is resumed; sets from before decisions existed are dropped.
     if ((await read($, sets)).length === 0) {
       const stored = (await $.store.get(storeKey(await $.session.id()))) as StepSet[] | undefined
@@ -823,8 +835,8 @@ export const register: Register = on => {
             </Text>
             <Box key="band-buttons" flexDirection="row" flexShrink={0}>
               {/* Clear drops this set for good, so the box moves on instead of coming back to it. */}
-              <Box key="clear-box" marginRight={2}>
-                <Button key="clear" plain dimColor label="Clear" hover={{ bold: true }} onPress={() => clearAll($)} />
+              <Box key="done-all-box" marginRight={2}>
+                <Button key="done-all" plain dimColor label="Mark as done" hover={{ bold: true }} onPress={() => markDone($)} />
               </Box>
               <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
             </Box>
@@ -846,9 +858,11 @@ export const register: Register = on => {
       await update($, band, () => null)
       return { text: 'Box hidden. /action-items brings it back.' }
     }
-    if (arg === 'clear' || arg === 'clear all') {
-      await clearAll($)
-      return { text: 'Box emptied.' }
+    // `clear` and `clear all` are the older names.
+    if (arg === 'done' || arg === 'clear' || arg === 'clear all') {
+      if (!nextSet(await read($, sets))) return { text: 'Nothing open: Claude needs nothing from you right now.' }
+      await markDone($)
+      return { text: 'Marked everything as done.' }
     }
     const open = nextSet(await read($, sets))
     if (!open) return { text: 'Nothing open: Claude needs nothing from you right now.' }

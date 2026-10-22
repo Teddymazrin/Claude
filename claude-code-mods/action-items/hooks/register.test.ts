@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, boxNote, dropItem, flatten, steProblems, steWords, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
+import { addSet, markAllDone, boxNote, dropItem, flatten, steProblems, steWords, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -194,4 +194,11 @@ test('new actions are held to Simplified Technical English, with every problem i
 test('caution and warning are kept on the action', () => {
   const set = parsed({ title: 'T', actions: [{ text: 'Erase the vault', why: 'Frees the space', caution: 'Do not erase the vault unless you are sure. You cannot undo this step.' }] })
   expect(set.items[0]).toMatchObject({ caution: 'Do not erase the vault unless you are sure. You cannot undo this step.' })
+})
+
+test('marking everything done ticks actions and closes questions without sending an answer', () => {
+  const set = parsed({ title: 'T', decisions: [{ question: 'Q?' }], actions: [{ text: 'Run it', why: 'w' }] })
+  const [done] = markAllDone([set])
+  expect(isOpen(done!)).toBe(false)
+  expect(done!.isSent).toBe(true)
 })

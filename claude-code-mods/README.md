@@ -7,7 +7,7 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | [Bare View](#bare-view) | 1.15.2 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.14.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Session Manager](#session-manager) | 1.1.6 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; writes a handoff note by itself before the cache runs out while you're away; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
-| [Action Items](#action-items) | 7.0.0 | Both | Everything Claude needs from you, decisions apart from actions, in one list above the prompt; unfinished asks carry over |
+| [Action Items](#action-items) | 7.1.0 | Both | Everything Claude needs from you, decisions apart from actions, in one list above the prompt; unfinished asks carry over |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
 | [Context Lens](#context-lens) | 1.2.0 | Both | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -203,9 +203,9 @@ The box opens on Decide while a question waits and moves to Do once they're answ
 
 **One list, nothing stacks:** the box holds one list. New asks from Claude go on top. Anything you haven't finished from before moves under a dim **── Earlier ──** line in the same list and stays until you tick it, or drop it with its **✕**. Finished ones drop off. There are no older sets to page through.
 
-**Closing it:** the box closes once nothing in it is still open, or with ✕. ✕ only hides the box; `/action-items` brings back what's still open. **Clear** (next to ✕) empties the box.
+**Closing it:** the box closes once nothing in it is still open, or with ✕. ✕ only hides the box; `/action-items` brings back what's still open. **Mark as done** (next to ✕) ticks off everything in the box and closes it; questions it closes don't send an answer to Claude.
 
-**While Claude is working:** the box's buttons only respond once Claude stops. To clear it mid-turn, type `/action-items clear` or `/action-items hide`; these run straight away.
+**While Claude is working:** the box's buttons only respond once Claude stops. To finish it mid-turn, type `/action-items done` or `/action-items hide`; these run straight away.
 
 **The look:** a Claude-orange frame and header, near-white text, charcoal buttons that turn orange on hover.
 

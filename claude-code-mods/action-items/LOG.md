@@ -1,5 +1,14 @@
 # Action Items log
 
+## 7.1.0 (2026-10-22)
+
+**Asked for:** change Clear to "Mark as done".
+
+**Changed:**
+- The header button reads **Mark as done**. It ticks off every action and closes every waiting question, and the box closes. Closed questions don't send an answer to Claude; answers you already clicked stay as they are
+- `/action-items done` does the same from the prompt, mid-turn too. `/action-items clear` and `clear all` still work as older names
+- Each earlier ask's own ✕ is unchanged
+
 ## 7.0.0 (2026-10-22)
 
 **Asked for:** stacking older sets behind arrows got to be too much (six sets at once). Picked: one list, with unfinished steps carried over.
