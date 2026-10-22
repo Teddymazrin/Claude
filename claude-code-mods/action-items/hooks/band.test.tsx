@@ -293,9 +293,9 @@ test('Clear drops the set shown so the box moves on, and Clear all empties it', 
   expect(await ui.find({ type: 'Text', text: 'Old one' })).toBeDefined()
   await ui.press({ key: 'clear' })
   expect(await ui.find({ type: 'Text', text: 'Middle one' })).toBeDefined()
-  // One left: no arrows and no Clear all; Clear closes the box.
+  // One left: still labelled latest, no Clear all; Clear closes the box.
   expect(await ui.find({ key: 'clear-all' })).toBeUndefined()
-  expect(await ui.find({ key: 'nav-older' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'LATEST STEPS' })).toBeDefined()
   await ui.press({ key: 'clear' })
   expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
   await ui.unmount()
@@ -341,6 +341,7 @@ test('while Claude works the box folds to one line; /action-items opens it until
   const WORKING = { ...BAND, props: { ...BAND.props, isWorking: true } }
   let ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...WORKING } as never)
   expect(await ui.find({ type: 'Text', text: /Ship · 1 to decide/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'LATEST STEPS' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Merge now\?/ })).toBeUndefined()
   await ui.unmount()
   await $.command.run({ command: 'action-items' } as never)

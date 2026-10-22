@@ -661,6 +661,8 @@ export const register: Register = on => {
             <Text>
               <Text bold color={C.title}>{'⚑ CLAUDE NEEDS YOU'}</Text>
               <Text dimColor>{'  ·  '}</Text>
+              <Text color={stepSet(list, set.id, -1) ? C.done : C.title}>{placeLabel(list, set.id)}</Text>
+              <Text dimColor>{'  ·  '}</Text>
               <Text>{`${set.title} · ${countText(set)}`}</Text>
             </Text>
             <Text dimColor>{'/action-items ▸'}</Text>
@@ -676,7 +678,6 @@ export const register: Register = on => {
       await update($, tab, () => null)
       await update($, band, () => to.id)
     }
-    const hasNav = list.length > 1
     const decide = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Decision; i: number } => x.it.kind === 'decide')
     const doing = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Action; i: number } => x.it.kind === 'do')
     // One section at a time: the tab the person picked, else Decide while a question waits.
@@ -720,7 +721,7 @@ export const register: Register = on => {
     // Do: drawn whole when it fits; else ticked ones fold and only the next open action keeps
     // its command. Why and how-to show only where the person opened an action's info.
     // Three rows stay free for Bare View's finished checklist, folded to one line beside it.
-    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3 - (hasNav ? 1 : 0), a => isInfo('a', set.items.indexOf(a)))
+    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 4, a => isInfo('a', set.items.indexOf(a)))
     const nextOpen = doing.find(x => !x.it.isDone)?.i
     const isDoneShown = await read($, showDone)
     const shown = level === 0 || isDoneShown ? doing : doing.filter(x => !x.it.isDone)
@@ -780,25 +781,23 @@ export const register: Register = on => {
               <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
             </Box>
           </Box>
-          {/* Latest steps by default; ◀ goes back through older sets, ▶ forward to the latest again. */}
-          {hasNav && (
-            <Box key="nav" flexDirection="row">
-              <Box key="nav-older-box" flexShrink={0} marginRight={1}>
-                <Button key="nav-older" plain dimColor={!older} label="◀" hover={{ bold: true }} onPress={go(older)} />
-              </Box>
-              <Box key="nav-label-box" flexShrink={1} marginRight={1}>
-                <Text bold={!newer} color={newer ? C.done : C.title} wrap="truncate-end">{placeLabel(list, set.id)}</Text>
-              </Box>
-              <Box key="nav-newer-box" flexShrink={0}>
-                <Button key="nav-newer" plain dimColor={!newer} label="▶" hover={{ bold: true }} onPress={go(newer)} />
-              </Box>
-              {newer && (
-                <Box key="nav-latest-box" flexShrink={0} marginLeft={2}>
-                  <Button key="nav-latest" plain dimColor label="Back to latest" hover={{ bold: true }} onPress={go(list[0])} />
-                </Box>
-              )}
+          {/* Always says which set this is: latest by default; ◀ goes back through older sets, ▶ forward again. */}
+          <Box key="nav" flexDirection="row">
+            <Box key="nav-older-box" flexShrink={0} marginRight={1}>
+              <Button key="nav-older" plain dimColor={!older} label="◀" hover={{ bold: true }} onPress={go(older)} />
             </Box>
-          )}
+            <Box key="nav-label-box" flexShrink={1} marginRight={1}>
+              <Text bold={!newer} color={newer ? C.done : C.title} wrap="truncate-end">{placeLabel(list, set.id)}</Text>
+            </Box>
+            <Box key="nav-newer-box" flexShrink={0}>
+              <Button key="nav-newer" plain dimColor={!newer} label="▶" hover={{ bold: true }} onPress={go(newer)} />
+            </Box>
+            {newer && (
+              <Box key="nav-latest-box" flexShrink={0} marginLeft={2}>
+                <Button key="nav-latest" plain dimColor label="Back to latest" hover={{ bold: true }} onPress={go(list[0])} />
+              </Box>
+            )}
+          </Box>
           <Box key="tabs" flexDirection="row" marginBottom={1}>
             {decide.length > 0 && tabChip('decide', '?', 'Decide', C.decide, waiting.length)}
             {doing.length > 0 && tabChip('do', '▶', 'Do', C.do, doing.length - doing.filter(x => x.it.isDone).length)}

@@ -1,5 +1,13 @@
 # Action Items log
 
+## 6.6.1 (2026-10-22)
+
+**Found after updating:** the box never said "Latest steps". The row only showed when the box held more than one set.
+
+**Changed:**
+- The **◀ LATEST STEPS ▶** row always shows, with the arrows dimmed while there is nothing older
+- The one-line box while Claude works says it too: "⚑ CLAUDE NEEDS YOU · LATEST STEPS · <title> · 1 to do"
+
 ## 6.6.0 (2026-10-22)
 
 **Asked for:** the box sometimes showed older action items. The latest steps should always show, labelled "Latest steps", with arrows to look back at older ones, and Clear kept.
