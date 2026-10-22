@@ -10,6 +10,8 @@ export type Decision = {
   isTyping?: boolean
   /** True once Claude has the answer, so it is not passed along again. */
   isDelivered?: boolean
+  /** Carried over from an earlier call because it was still waiting; shown under "Earlier". */
+  isEarlier?: boolean
 }
 /** Something you do yourself: run a command, sign in, check a setting. */
 export type Action = {
@@ -24,6 +26,8 @@ export type Action = {
   warning?: string
   caution?: string
   isDone: boolean
+  /** Carried over from an earlier call because it was not done; shown under "Earlier". */
+  isEarlier?: boolean
 }
 export type Item = Decision | Action
 /** One task's asks: what Claude needs from the person after it. */
@@ -34,8 +38,6 @@ export type StepSet = {
   at: number
   /** True once the decisions' answers went back to Claude. */
   isSent?: boolean
-  /** True once a newer version or Claude's `clear` replaced it: kept to look back at, no longer open. */
-  isSuperseded?: boolean
 }
 
 declare module 'claude-code' {

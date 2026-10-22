@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, boxNote, steProblems, steWords, clearTitles, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
+import { addSet, boxNote, dropItem, flatten, steProblems, steWords, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -50,57 +50,45 @@ test('a typed answer is left out of the clicked answers', () => {
   expect(answerText(list[0]!)).toBe('T:\n- Q1? → x')
 })
 
-test('keeps the newest first; a same-titled set becomes the latest, the earlier one kept as replaced', () => {
-  const mk = (id: string, title: string): StepSet => ({ id, title, at: 0, items: [{ kind: 'do', text: 'a', isDone: false }] })
-  let list = addSet([], mk('1', 'A'))
-  list = addSet(list, mk('2', 'B'))
-  list = addSet(list, mk('3', 'A'))
-  expect(list.map(s => s.id)).toEqual(['3', '2', '1'])
-  expect(list.map(s => !!s.isSuperseded)).toEqual([false, false, true])
-  expect(isOpen(list[2]!)).toBe(false)
+test('one list: new asks on top, unfinished ones carried under Earlier, finished ones dropped', () => {
+  let list: StepSet[] = [parsed({ title: 'Old', decisions: [{ question: 'Region?' }, { question: 'Name?' }], actions: [{ text: 'Sign in', why: 'w' }, { text: 'Old step', why: 'w' }, { text: 'Done step', why: 'w' }] })]
+  list = toggleAction(list, '1', 4)
+  list = pick(list, '1', 1, 'Lens')
+  const next = parseSet({ title: 'New', actions: [{ text: 'Sign in', why: 'w' }, { text: 'Run the new script', why: 'w2' }] }, '2', 2_000)
+  if (typeof next === 'string') throw new Error(next)
+  list = addSet(list, next)
+  expect(list.length).toBe(1)
+  expect(list[0]!.title).toBe('New')
+  // Decisions first; in each kind, the new asks before what is carried over.
+  expect(list[0]!.items.map(i => `${i.text}${i.isEarlier ? ' (earlier)' : ''}`)).toEqual(['Region? (earlier)', 'Sign in', 'Run the new script', 'Old step (earlier)'])
+  expect(countText(list[0]!)).toBe('1 to decide · 3 to do')
+  // A carried ask can be dropped on its own.
+  const dropped = dropItem(list, '2', 3)
+  expect(dropped[0]!.items.map(i => i.text)).toEqual(['Region?', 'Sign in', 'Run the new script'])
 })
 
-test('a same-titled set updates in place: ticked actions and answers stay, new asks are added', () => {
-  let list: StepSet[] = [parsed({ title: 'Deploy', decisions: [{ question: 'Region?', options: ['a', 'b'] }], actions: [{ text: 'Sign in', why: 'w' }, { text: 'Old step', why: 'w' }] })]
-  list = toggleAction(list, '1', 1)
-  list = pick(list, '1', 0, 'b')
-  const update = parseSet({ title: 'Deploy', decisions: [{ question: 'Region?', options: ['a', 'b'] }], actions: [{ text: 'Sign in', why: 'w' }, { text: 'Run the new script', why: 'w2' }] }, '2', 2_000)
-  if (typeof update === 'string') throw new Error(update)
-  list = addSet(list, update)
-  // The earlier version stays behind it, replaced.
-  expect(list.length).toBe(2)
-  expect(list[1]!.isSuperseded).toBe(true)
-  expect(list[0]!.id).toBe('2')
-  expect(list[0]!.items.map(i => i.text)).toEqual(['Region?', 'Sign in', 'Run the new script'])
-  expect(list[0]!.items[1]).toMatchObject({ isDone: true })
-  expect(list[0]!.items[0]).toMatchObject({ answer: 'b' })
-  expect(countText(list[0]!)).toBe('1 to do')
-})
-
-test('clear marks sets replaced, never deletes them; the box note lists what is still open', () => {
+test('a box saved with stacked sets loads as one list', () => {
   const a = parsed({ title: 'A', actions: [{ text: 'x', why: 'w' }] })
-  const b: StepSet = { ...parsed({ title: 'B', decisions: [{ question: 'Q?' }] }), id: '2' }
-  const marked = clearTitles([b, a], ['A'])
-  expect(marked.map(s => s.title)).toEqual(['B', 'A'])
-  expect(isOpen(marked[1]!)).toBe(false)
-  expect(boxNote([b, a])).toContain('"B" (1 to decide), "A" (1 to do)')
+  const b: StepSet = { ...parsed({ title: 'B', actions: [{ text: 'y', why: 'w' }] }), id: '2' }
+  const one = flatten([b, a])
+  expect(one.length).toBe(1)
+  expect(one[0]!.title).toBe('B')
+  expect(one[0]!.items.map(i => i.text)).toEqual(['y', 'x'])
+  expect(boxNote(one)).toContain('"B" (2 to do)')
   expect(boxNote([])).toBeUndefined()
 })
 
-test('a later call updates the box on the fly, clears answered questions and drops stale sets in one go', async ($, on) => {
+test('a later call clears answered questions and adds new asks in one go', async ($, on) => {
   let now = 1_000
   on('clock.now', () => ({ value: now }))
   const call = (input: Record<string, unknown>) => $.tool.call({ tool: 'mcp__action-items__action_items', ...input } as never)
-  await call({ title: 'Old task', actions: [{ text: 'Old step', why: 'w' }] })
-  now = 2_000
   await call({ title: 'Setup', decisions: [{ question: 'Which env?' }], actions: [{ text: 'Sign in', why: 'w' }] })
-  now = 3_000
-  const ran = await call({ title: 'Setup', answered: [1], clear: ['Old task'], actions: [{ text: 'Sign in', why: 'w' }, { text: 'Run the script', why: 'w2', command: './go.sh' }] })
-  expect(String(ran.result)).toContain('Updated')
+  now = 2_000
+  const ran = await call({ title: 'Setup', answered: [1], actions: [{ text: 'Run the script', why: 'w2', command: './go.sh' }] })
   expect(String(ran.result)).toContain('2 to do')
-  expect(String(ran.result)).not.toContain('Old task')
-  // A typed answer cleared with no new asks still works on its own.
-  now = 4_000
+  expect(String(ran.result)).toContain('1 unfinished from before')
+  expect(String(ran.result)).not.toContain('to decide')
+  now = 3_000
   await call({ title: 'Q', decisions: [{ question: 'A?' }] })
   expect(String((await call({ title: 'Q', answered: [1] })).result)).toContain('Cleared')
 })

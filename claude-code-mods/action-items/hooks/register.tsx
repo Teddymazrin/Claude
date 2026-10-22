@@ -7,7 +7,6 @@ const PLUGIN = 'action-items'
 const COMMAND = 'action-items'
 const TOOL = 'action_items'
 const TOOL_ID = `mcp__${PLUGIN}__${TOOL}`
-const KEEP = 20
 
 const sets = atom({ plugin: 'action-items', key: 'sets' } as const, [])
 const band = atom({ plugin: 'action-items', key: 'band' } as const, null)
@@ -50,7 +49,7 @@ The user keeps an Action Items box above the prompt for everything you need from
     - \`caution\` (risk to data, a service or access) or \`warning\` (risk to people): the command or condition first, then the risk. Say "You cannot undo this step." when that is true.
   - Write every action in Simplified Technical English (ASD-STE100): simple common words, one name for one thing, keep "the", "a" and "that". \`why\`, \`detail\` and notices: 25 words or fewer. Never contractions, semicolons, should/may/might/could/would (use must/can/will), present perfect, "-ing" verbs, passive voice, phrasal verbs ("set up": install or configure), check/verify/confirm/ensure (write "make sure that"), e.g./i.e./etc., or simply/just/easily. Commands, paths, on-screen labels, names and numbers stay exactly as they are.
 - One call per turn with a short \`title\` (the task), all decisions and actions together.
-- The box never updates itself: call the tool again in any turn where what you need changes, even while it still holds older asks. Same \`title\` makes a new latest version of that set (what they already ticked or answered carries over; the earlier version stays for them to look back at); a new title adds a set. Put titles of sets that no longer apply in \`clear\`: they are marked replaced, never deleted. Only the user deletes sets.
+- The box never updates itself: call the tool again in any turn where what you need changes, even while it still holds older asks. Give only what is new or changed: steps the user has not finished stay in the box by themselves, under "Earlier", until they tick or clear them.
 - When the user answers a waiting question by typing instead of clicking, you're told which are still open: put their numbers in \`answered\` with that \`title\`, in the same call as any new decisions and actions.
 - Then keep your final answer short: say what you did and that what you need is in the box. Don't repeat the options or the steps.
 - Steps or commands for the user go in the box, never only in your reply.
@@ -140,9 +139,9 @@ export const decisions = (set: StepSet) => set.items.filter((i): i is Decision =
 export const actions = (set: StepSet) => set.items.filter((i): i is Action => i.kind === 'do')
 
 /** A decision still waiting on the person: not picked, and its set's answers not yet sent. */
-const isPending = (set: StepSet, d: Decision) => !set.isSent && !set.isSuperseded && (d.answer === undefined || d.isTyping === true)
+const isPending = (set: StepSet, d: Decision) => !set.isSent && (d.answer === undefined || d.isTyping === true)
 export const pendingDecisions = (set: StepSet) => decisions(set).filter(d => isPending(set, d))
-export const openActions = (set: StepSet) => (set.isSuperseded ? [] : actions(set).filter(a => !a.isDone))
+export const openActions = (set: StepSet) => actions(set).filter(a => !a.isDone)
 export const isOpen = (set: StepSet) => pendingDecisions(set).length > 0 || openActions(set).length > 0
 /** Every decision has a clicked or typed answer and nothing has been sent yet. */
 export const isDecided = (set: StepSet) =>
@@ -164,18 +163,31 @@ export const mergeSet = (old: StepSet, set: StepSet): StepSet => {
   return closeIfDecided({ ...set, items })
 }
 
+/** What the person has not finished: an open action, or a question still waiting on them. */
+const isUnfinished = (set: StepSet, it: Item) => (it.kind === 'do' ? !it.isDone : isPending(set, it))
+
 /**
- * The newest first, `KEEP` at most. A set with the same title becomes the latest version, carrying over
- * what was ticked or answered; the earlier version stays behind it, marked replaced, so nothing is lost.
+ * The box holds one list. New asks go on top; what the person has not finished from before is carried
+ * under "Earlier" until they tick or clear it; what they finished drops off. Nothing stacks.
  */
-export const addSet = (list: readonly StepSet[], set: StepSet) => {
-  const old = list.find(s => s.title === set.title && !s.isSuperseded)
-  return [old ? mergeSet(old, set) : set, ...list.map(s => (s === old ? { ...s, isSuperseded: true } : s))].slice(0, KEEP)
+export const addSet = (list: readonly StepSet[], set: StepSet): StepSet[] => {
+  const old = list[0]
+  if (!old) return [set]
+  const merged = mergeSet(old, set)
+  const earlier = old.items
+    .filter(o => isUnfinished(old, o) && !set.items.some(it => it.kind === o.kind && it.text === o.text))
+    .map(o => ({ ...o, isEarlier: true }))
+  // Decisions before actions, each with the new asks first.
+  const items = [...merged.items, ...earlier].sort((x, y) => (x.kind === y.kind ? 0 : x.kind === 'decide' ? -1 : 1))
+  return [{ ...merged, items, isSent: merged.isSent && !earlier.some(it => it.kind === 'decide') }]
 }
 
-/** Marks the sets Claude says no longer apply as replaced, by title. They stay for the person to look back at. */
-export const clearTitles = (list: readonly StepSet[], titles: readonly string[]) =>
-  list.map(s => (titles.includes(s.title) ? { ...s, isSuperseded: true } : s))
+/** A box saved by 6.7 or earlier, with sets stacked: folded into one list, oldest first. */
+export const flatten = (list: readonly StepSet[]) => [...list].reverse().reduce<StepSet[]>((acc, s) => addSet(acc, s), []).slice(0, 1)
+
+/** Drops one ask the person no longer needs. */
+export const dropItem = (list: readonly StepSet[], id: string, index: number) =>
+  list.map(s => (s.id !== id ? s : { ...s, items: s.items.filter((_, i) => i !== index) })).filter(s => s.items.length > 0)
 
 const editItem = (list: readonly StepSet[], id: string, index: number, fn: (item: Item) => Item) =>
   list.map(s => (s.id !== id ? s : { ...s, items: s.items.map((it, i) => (i === index ? fn(it) : it)) }))
@@ -243,7 +255,7 @@ export const openNote = (set: StepSet) => {
 export const boxNote = (list: readonly StepSet[]) => {
   const open = list.filter(isOpen)
   if (open.length === 0) return undefined
-  return `[Action Items] The box holds: ${open.map(s => `"${s.title}" (${countText(s)})`).join(', ')}. If this turn changes what you need from the user, call ${TOOL_ID} again: same title makes a new version of it, \`clear\` marks one replaced.`
+  return `[Action Items] The box holds: ${open.map(s => `"${s.title}" (${countText(s)})`).join(', ')}. If this turn changes what you need from the user, call ${TOOL_ID} again with what is new: unfinished asks stay by themselves.`
 }
 
 /** The clicked answers as the person's reply; a typed one is left for them to finish. */
@@ -275,7 +287,7 @@ export const doRows = (list: readonly Action[], columns: number, level: DoLevel,
   const open = list.filter(a => !a.isDone)
   const shown = level === 0 ? list : open
   const next = open[0]
-  let rows = DO_CHROME + (level > 0 && open.length < list.length ? 1 : 0)
+  let rows = DO_CHROME + (level > 0 && open.length < list.length ? 1 : 0) + (open.some(a => a.isEarlier) ? 1 : 0)
   shown.forEach((a, i) => {
     rows += (level === 0 && i > 0 ? 1 : 0) + lines(a.text)
     if (a.isDone) return
@@ -327,46 +339,13 @@ async function show($: EngineInterface, set: StepSet) {
   await update($, tab, () => null)
 }
 
-/** The newest set with something still waiting on the person. */
+/** The box's one list, while something in it is still open. */
 export const nextSet = (list: readonly StepSet[]) => list.find(isOpen)
-
-/** The set being looked at: the one picked with the arrows, else the latest. */
-export const viewedSet = (list: readonly StepSet[], id: string | null) => list.find(s => s.id === id) ?? list[0]
-
-/**
- * The set the box shows: the latest steps unless the person went back to older ones with the arrows.
- * It never switches to an older set by itself; the box closes only once nothing in it is still open.
- */
-export const shownSet = (list: readonly StepSet[], id: string | null) => {
-  if (id === null) return undefined
-  const set = viewedSet(list, id)
-  if (!set || (set === list[0] && !list.some(isOpen))) return undefined
-  return set
-}
-
-/** The set one step older (`1`) or newer (`-1`) than `id`, or undefined past either end. */
-export const stepSet = (list: readonly StepSet[], id: string, by: 1 | -1) => {
-  const i = list.findIndex(s => s.id === id)
-  return i < 0 ? undefined : list[i + by]
-}
-
-/** "Latest steps", or "Older steps · 2 of 3" for one the arrows went back to. */
-export const placeLabel = (list: readonly StepSet[], id: string) => {
-  const i = list.findIndex(s => s.id === id)
-  const tag = list[i]?.isSuperseded ? ' · replaced' : ''
-  return i <= 0 ? `LATEST STEPS${tag}` : `OLDER STEPS · ${i + 1} of ${list.length}${tag}`
-}
+export const shownSet = (list: readonly StepSet[], id: string | null) => (id === null ? undefined : nextSet(list))
 
 /** The line a folded action shows of its command: the first that runs, past blank lines and comments. */
 export const commandPreview = (command: string) =>
   command.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#') && !l.startsWith('//') && !/^rem\b/i.test(l)) ?? command.split('\n')[0]!
-
-// Clear drops the set shown for good; the box goes back to the latest steps, or closes.
-async function clearShown($: EngineInterface, id: string) {
-  const left = await save($, l => clearSet(l, id))
-  await update($, tab, () => null)
-  await update($, band, () => left[0]?.id ?? null)
-}
 
 async function clearAll($: EngineInterface) {
   await save($, () => [])
@@ -424,9 +403,29 @@ function infoButton($: EngineInterface, e: Surface, key: string, isOpen: boolean
   )
 }
 
+// "✕" on an ask carried over from before: drops it for good.
+function dropButton($: EngineInterface, e: Surface, key: string, onPress: () => unknown) {
+  const { Box, Button } = $.ui.resolve(e)
+  return (
+    <Box key={`${key}-box`} flexShrink={0} marginLeft={2}>
+      <Button key={key} plain dimColor label="✕" hover={{ bold: true }} onPress={onPress} />
+    </Box>
+  )
+}
+
+// The line between new asks and what is still unfinished from before.
+function earlierLine($: EngineInterface, e: Surface, key: string) {
+  const { Box, Text } = $.ui.resolve(e)
+  return (
+    <Box key={key}>
+      <Text dimColor>{'── Earlier ──'}</Text>
+    </Box>
+  )
+}
+
 // "1  Which region?" with its options as buttons beneath; once answered, the pick in green.
 // Its context line waits behind "▸ info".
-function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision, index: number, n: number, isSpaced: boolean, isFull: boolean, isInfo: boolean, onInfo: () => unknown) {
+function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision, index: number, n: number, isSpaced: boolean, isFull: boolean, isInfo: boolean, onInfo: () => unknown, onDrop?: () => unknown) {
   const { Box, Text } = $.ui.resolve(e)
   const key = `${set.id}-${index}`
   const pending = isPending(set, d)
@@ -440,6 +439,7 @@ function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision,
           <Text bold={pending && isFull} dimColor={!pending || !isFull}>{d.text}</Text>
         </Box>
         {isFull && pending && d.detail && infoButton($, e, `dinfo-${key}`, isInfo, onInfo)}
+        {onDrop && pending && dropButton($, e, `ddrop-${key}`, onDrop)}
       </Box>
       {isFull && pending && d.detail && isInfo && (
         <Box marginLeft={4}>
@@ -475,7 +475,7 @@ function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision,
 // Its why and how-to wait behind "▸ info", so the task itself stands out.
 type Show = { why: boolean; detail: boolean; command: boolean }
 
-function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, index: number, n: number, isSpaced: boolean, show: Show, onInfo: () => unknown, onOpen?: () => unknown, onClose?: () => unknown) {
+function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, index: number, n: number, isSpaced: boolean, show: Show, onInfo: () => unknown, onOpen?: () => unknown, onClose?: () => unknown, onDrop?: () => unknown) {
   const { Box, Text, Button } = $.ui.resolve(e)
   const key = `${set.id}-${index}`
   return (
@@ -523,6 +523,7 @@ function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, ind
           )}
         </Box>
         {(a.why || a.detail) && !a.isDone && infoButton($, e, `info-${key}`, show.why || show.detail, onInfo)}
+        {onDrop && dropButton($, e, `drop-${key}`, onDrop)}
         {/* Folded, its command rides on the same row, cut to fit, with Copy after it. */}
         {!show.command && a.command && !a.isDone && (
           <Box flexShrink={1} marginLeft={2} backgroundColor={C.code} paddingX={1}>
@@ -573,7 +574,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: TOOL,
       description:
-        "Put everything you need from the user in their Action Items box above the prompt: decisions they make (questions, choices, go-aheads) and actions they do themselves (run a script, sign in, check a setting). Call once before your final answer whenever you need something from them, and again whenever that changes: the same title updates a set already in the box.",
+        "Put everything you need from the user in their Action Items box above the prompt: decisions they make (questions, choices, go-aheads) and actions they do themselves (run a script, sign in, check a setting). Call once before your final answer whenever you need something from them, and again whenever that changes, with only what is new: unfinished asks stay in the box by themselves.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -596,11 +597,6 @@ export const register: Register = on => {
             items: { type: 'number' },
             description: "Questions the user answered by typing: their numbers in the box, with that set's title. Can go with new decisions and actions in the same call.",
           },
-          clear: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Titles of sets in the box that no longer apply: marked replaced, kept for the user to look back at.',
-          },
           actions: {
             type: 'array',
             description: 'Things the user does themselves.',
@@ -622,12 +618,12 @@ export const register: Register = on => {
       },
     })
     // Immediate, so `clear` and `hide` work while Claude is still working, when the box's buttons wait for the turn to end.
-    await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you', argumentHint: '[clear | clear all | hide]', immediate: true })
+    await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you', argumentHint: '[clear | hide]', immediate: true })
     // Bring back this conversation's box when it is resumed; sets from before decisions existed are dropped.
     if ((await read($, sets)).length === 0) {
       const stored = (await $.store.get(storeKey(await $.session.id()))) as StepSet[] | undefined
       const usable = Array.isArray(stored) ? stored.filter(s => Array.isArray(s?.items)) : []
-      if (usable.length > 0) await update($, sets, () => usable)
+      if (usable.length > 0) await update($, sets, () => flatten(usable))
     }
     return next(e)
   })
@@ -682,17 +678,13 @@ export const register: Register = on => {
   on('tool.call', { tool: TOOL_ID }, async ($, e) => {
     const input = e as unknown as Record<string, unknown>
     const hasAsks = Array.isArray(input.decisions) || Array.isArray(input.actions) || Array.isArray(input.steps)
-    const dropped = Array.isArray(input.clear) ? input.clear.map(str).filter(Boolean) : []
-    if (dropped.length > 0) {
-      await save($, l => clearTitles(l, dropped))
-    }
     // Questions answered in chat, cleared first so an update in the same call keeps them answered.
     if (Array.isArray(input.answered)) {
       const numbers = input.answered.filter((n): n is number => typeof n === 'number')
       const title = str(input.title)
       const id = await read($, band)
       const list = await read($, sets)
-      const target = list.find(s => s.title === title) ?? list.find(s => s.id === id)
+      const target = list.find(s => s.title === title) ?? list[0]
       if (!target && !hasAsks) return { result: 'Not saved: no set with that title in the box.', isError: true }
       if (target) {
         const next = markAnswered(target, numbers)
@@ -700,24 +692,21 @@ export const register: Register = on => {
         if (!hasAsks) return { result: `Cleared from the box. Left in it: ${countText(next)}.` }
       }
     }
-    if (!hasAsks && dropped.length > 0) return { result: `Marked replaced (kept for the user to look back at): ${dropped.join(', ')}.` }
     const now = await $.clock.now()
     const parsed = parseSet(input, String(now), now)
     if (typeof parsed === 'string') return { result: `Not saved: ${parsed}`, isError: true }
-    const isUpdate = (await read($, sets)).some(s => s.title === parsed.title)
     await show($, parsed)
-    const shown = (await read($, sets)).find(s => s.id === parsed.id) ?? parsed
+    const shown = (await read($, sets))[0] ?? parsed
     const clicks = decisions(parsed).some(d => d.options.length > 0) ? ' Their clicked answers come back to you as their next message.' : ''
-    const others = (await read($, sets)).filter(s => s.id !== parsed.id && isOpen(s))
-    const older = others.length > 0 ? ` Also still open: ${others.map(s => `"${s.title}"`).join(', ')}.` : ''
-    return { result: `${isUpdate ? 'Updated' : 'Shown'} in the Action Items box above the prompt (${countText(shown)}). Tell the user it is there instead of repeating it.${clicks}${older}` }
+    const carried = shown.items.filter(it => it.isEarlier).length
+    const earlier = carried > 0 ? ` ${carried} unfinished from before stay under "Earlier".` : ''
+    return { result: `Shown in the Action Items box above the prompt (${countText(shown)}). Tell the user it is there instead of repeating it.${clicks}${earlier}` }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     const id = await read($, band)
     if (id === null || e.props.hasSurvey) return below
-    // The latest steps, or an older set the person went back to with the arrows.
     const list = await read($, sets)
     const set = shownSet(list, id)
     if (!set) return below
@@ -731,8 +720,6 @@ export const register: Register = on => {
             <Text>
               <Text bold color={C.title}>{'⚑ CLAUDE NEEDS YOU'}</Text>
               <Text dimColor>{'  ·  '}</Text>
-              <Text color={stepSet(list, set.id, -1) ? C.done : C.title}>{placeLabel(list, set.id)}</Text>
-              <Text dimColor>{'  ·  '}</Text>
               <Text>{`${set.title} · ${countText(set)}`}</Text>
             </Text>
             <Text dimColor>{'/action-items ▸'}</Text>
@@ -740,13 +727,6 @@ export const register: Register = on => {
           {below}
         </Box>
       )
-    }
-    const older = stepSet(list, set.id, 1)
-    const newer = stepSet(list, set.id, -1)
-    const go = (to: StepSet | undefined) => async () => {
-      if (!to) return
-      await update($, tab, () => null)
-      await update($, band, () => to.id)
     }
     const decide = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Decision; i: number } => x.it.kind === 'decide')
     const doing = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Action; i: number } => x.it.kind === 'do')
@@ -771,6 +751,7 @@ export const register: Register = on => {
     const answered = decide.filter(x => !isPending(set, x.it))
     const waiting = decide.filter(x => isPending(set, x.it))
     const focus = waiting.find(x => !x.it.isTyping)?.i
+    const drop = (i: number) => () => save($, l => dropItem(l, set.id, i))
     const openInfo = await read($, info)
     const isInfo = (kind: 'a' | 'd', i: number) => openInfo.includes(`${kind}:${set.id}:${i}`)
     const toggleInfo = (kind: 'a' | 'd', i: number) => () =>
@@ -782,16 +763,17 @@ export const register: Register = on => {
             <Text color={C.done} dimColor>{`✓   ${answered.length} answered`}</Text>
           </Box>
         )}
-        {(waiting.length > 0 ? waiting : answered).map(x =>
-          decisionLine($, e, set, x.it, x.i, decide.indexOf(x) + 1, false, x.i === focus, isInfo('d', x.i), toggleInfo('d', x.i)),
-        )}
+        {(waiting.length > 0 ? waiting : answered).flatMap((x, n, all) => [
+          ...(x.it.isEarlier && !all[n - 1]?.it.isEarlier ? [earlierLine($, e, 'earlier-decide')] : []),
+          decisionLine($, e, set, x.it, x.i, decide.indexOf(x) + 1, false, x.i === focus, isInfo('d', x.i), toggleInfo('d', x.i), x.it.isEarlier ? drop(x.i) : undefined),
+        ])}
       </Box>
     )
 
     // Do: drawn whole when it fits; else ticked ones fold and only the next open action keeps
     // its command. Why and how-to show only where the person opened an action's info.
     // Three rows stay free for Bare View's finished checklist, folded to one line beside it.
-    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 4, a => isInfo('a', set.items.indexOf(a)))
+    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3, a => isInfo('a', set.items.indexOf(a)))
     const nextOpen = doing.find(x => !x.it.isDone)?.i
     const isDoneShown = await read($, showDone)
     const shown = level === 0 || isDoneShown ? doing : doing.filter(x => !x.it.isDone)
@@ -819,12 +801,13 @@ export const register: Register = on => {
             />
           </Box>
         )}
-        {shown.map((x, n) => {
+        {shown.flatMap((x, n) => {
           const sh = showFor(x.i)
+          const divider = x.it.isEarlier && !x.it.isDone && !shown.slice(0, n).some(y => y.it.isEarlier && !y.it.isDone) ? [earlierLine($, e, 'earlier-do')] : []
           const open = isWhole(sh, x.it) ? undefined : () => update($, openAction, () => `${set.id}:${x.i}`)
           // In a short box the opened one folds back from its title too.
           const close = level > 0 && x.i === opened && x.it.command ? () => update($, openAction, () => `${set.id}:none`) : undefined
-          return actionLine($, e, set, x.it, x.i, doing.indexOf(x) + 1, level === 0 && n > 0, sh, toggleInfo('a', x.i), open, close)
+          return [...divider, actionLine($, e, set, x.it, x.i, doing.indexOf(x) + 1, level === 0 && n > 0 && divider.length === 0, sh, toggleInfo('a', x.i), open, close, x.it.isEarlier ? drop(x.i) : undefined)]
         })}
       </Box>
     )
@@ -840,33 +823,11 @@ export const register: Register = on => {
             </Text>
             <Box key="band-buttons" flexDirection="row" flexShrink={0}>
               {/* Clear drops this set for good, so the box moves on instead of coming back to it. */}
-              {list.length > 1 && (
-                <Box key="clear-all-box" marginRight={2}>
-                  <Button key="clear-all" plain dimColor label={`Clear all ${list.length}`} hover={{ bold: true }} onPress={() => clearAll($)} />
-                </Box>
-              )}
               <Box key="clear-box" marginRight={2}>
-                <Button key="clear" plain dimColor label="Clear" hover={{ bold: true }} onPress={() => clearShown($, set.id)} />
+                <Button key="clear" plain dimColor label="Clear" hover={{ bold: true }} onPress={() => clearAll($)} />
               </Box>
               <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
             </Box>
-          </Box>
-          {/* Always says which set this is: latest by default; ◀ goes back through older sets, ▶ forward again. */}
-          <Box key="nav" flexDirection="row">
-            <Box key="nav-older-box" flexShrink={0} marginRight={1}>
-              <Button key="nav-older" plain dimColor={!older} label="◀" hover={{ bold: true }} onPress={go(older)} />
-            </Box>
-            <Box key="nav-label-box" flexShrink={1} marginRight={1}>
-              <Text bold={!newer} color={newer ? C.done : C.title} wrap="truncate-end">{placeLabel(list, set.id)}</Text>
-            </Box>
-            <Box key="nav-newer-box" flexShrink={0}>
-              <Button key="nav-newer" plain dimColor={!newer} label="▶" hover={{ bold: true }} onPress={go(newer)} />
-            </Box>
-            {newer && (
-              <Box key="nav-latest-box" flexShrink={0} marginLeft={2}>
-                <Button key="nav-latest" plain dimColor label="Back to latest" hover={{ bold: true }} onPress={go(list[0])} />
-              </Box>
-            )}
           </Box>
           <Box key="tabs" flexDirection="row" marginBottom={1}>
             {decide.length > 0 && tabChip('decide', '?', 'Decide', C.decide, waiting.length)}
@@ -885,17 +846,10 @@ export const register: Register = on => {
       await update($, band, () => null)
       return { text: 'Box hidden. /action-items brings it back.' }
     }
-    if (arg === 'clear all') {
+    if (arg === 'clear' || arg === 'clear all') {
       await clearAll($)
       return { text: 'Box emptied.' }
     }
-    if (arg === 'clear') {
-      const shown = viewedSet(await read($, sets), await read($, band))
-      if (!shown) return { text: 'Nothing to clear.' }
-      await clearShown($, shown.id)
-      return { text: `Cleared ${shown.title}.` }
-    }
-    // The latest steps; once those are done, the newest older set still open, shown as older.
     const open = nextSet(await read($, sets))
     if (!open) return { text: 'Nothing open: Claude needs nothing from you right now.' }
     await update($, band, () => open.id)

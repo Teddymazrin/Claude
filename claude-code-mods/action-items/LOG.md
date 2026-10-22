@@ -1,5 +1,17 @@
 # Action Items log
 
+## 7.0.0 (2026-10-22)
+
+**Asked for:** stacking older sets behind arrows got to be too much (six sets at once). Picked: one list, with unfinished steps carried over.
+
+**Changed:**
+- The box holds one list. A new call from Claude puts its asks on top; anything you haven't finished from before moves under a dim **── Earlier ──** line in the same list, and finished ones drop off
+- Carried asks stay until you tick them or drop them with their own **✕**. Claude can't remove them, so nothing disappears by itself
+- An ask Claude sends again with the same text keeps what you ticked or answered, and moves back up out of Earlier
+- Removed the ◀ ▶ arrows, the LATEST/OLDER STEPS row, Clear all, Claude's `clear` and the "replaced" sets from 6.6 and 6.7. **Clear** now empties the box; `/action-items clear all` still works and does the same
+- A box saved by 6.7 or earlier with stacked sets loads as one list
+- Claude's instructions are shorter: give only what is new, since unfinished asks stay by themselves
+
 ## 6.8.0 (2026-10-22)
 
 **Asked for:** steps in the box should follow the `ste` skill's format, without loading the whole skill and filling the context window.

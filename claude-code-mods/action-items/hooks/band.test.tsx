@@ -196,87 +196,39 @@ test('opening info on one action leaves the others closed', async ($, on) => {
   }
 })
 
-test('the latest steps always show, even with an older question still waiting', async ($, on) => {
+test('new asks go on top; unfinished ones from before stay under Earlier until ticked or dropped', async ($, on) => {
   let now = 20_000
   on('clock.now', () => ({ value: now }))
-  on('prompt.submit', ($, e) => ({ text: e.text }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Older', decisions: [{ question: 'Still waiting?' }] } as never)
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Older', actions: [{ text: 'Old step', why: 'w' }, { text: 'Other old step', why: 'w' }] } as never)
   now = 21_000
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Newer', actions: [{ text: 'Run the new step', why: 'w' }] } as never)
-  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
-  expect(await ui.find({ type: 'Text', text: /Run the new step/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'LATEST STEPS' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Still waiting\?/ })).toBeUndefined()
-  // Done with the latest, the box stays on it (older steps still open behind ◀), never pulling the older set forward.
-  await ui.press({ key: 'tick-21000-0' })
-  expect(await ui.find({ type: 'Text', text: 'Newer' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Still waiting\?/ })).toBeUndefined()
-  await ui.press({ key: 'nav-older' })
-  expect(await ui.find({ type: 'Text', text: /Still waiting\?/ })).toBeDefined()
-  await ui.unmount()
-})
-
-test('an update with the same title keeps the earlier version behind ◀, marked replaced', async ($, on) => {
-  let now = 40_000
-  on('clock.now', () => ({ value: now }))
-  on('ui.render', ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box />
-  })
-  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Setup', actions: [{ text: 'First step', why: 'w' }] } as never)
-  now = 41_000
-  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Setup', actions: [{ text: 'New step', why: 'w' }] } as never)
-  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
-  expect(await ui.find({ type: 'Text', text: /New step/ })).toBeDefined()
-  await ui.press({ key: 'nav-older' })
-  expect(await ui.find({ type: 'Text', text: /First step/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'OLDER STEPS · 2 of 2 · replaced' })).toBeDefined()
-  await ui.unmount()
-})
-
-test('◀ and ▶ step through older sets; Back to latest returns', async ($, on) => {
-  let now = 30_000
-  on('clock.now', () => ({ value: now }))
-  on('ui.render', ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box />
-  })
-  for (const [title, at] of [['One', 30_000], ['Two', 31_000], ['Three', 32_000]] as const) {
-    now = at
-    await $.tool.call({ tool: 'mcp__action-items__action_items', title, actions: [{ text: `Do ${title}`, why: 'w' }] } as never)
-  }
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
-    expect(await ui.find({ type: 'Text', text: 'Three' })).toBeDefined()
-    await ui.press({ key: 'nav-older' })
-    expect(await ui.find({ type: 'Text', text: 'Two' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'OLDER STEPS · 2 of 3' })).toBeDefined()
-    await ui.press({ key: 'nav-older' })
-    expect(await ui.find({ type: 'Text', text: 'One' })).toBeDefined()
-    // Past the oldest, ◀ does nothing.
-    await ui.press({ key: 'nav-older' })
-    expect(await ui.find({ type: 'Text', text: 'One' })).toBeDefined()
-    await ui.press({ key: 'nav-newer' })
-    expect(await ui.find({ type: 'Text', text: 'Two' })).toBeDefined()
-    await ui.press({ key: 'nav-latest' })
-    expect(await ui.find({ type: 'Text', text: 'LATEST STEPS' })).toBeDefined()
-    expect(await ui.find({ key: 'nav-latest' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'Newer' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Run the new step/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '── Earlier ──' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Old step/ })).toBeDefined()
+    // No arrows, no stacked sets.
+    expect(await ui.find({ key: 'nav-older' })).toBeUndefined()
+    expect(await ui.find({ key: 'tick-21000-0' })).toBeDefined()
+    // The new ask has no ✕; a carried one does.
+    expect(await ui.find({ key: 'drop-21000-0' })).toBeUndefined()
+    expect(await ui.find({ key: 'drop-21000-1' })).toBeDefined()
     await ui.unmount()
   }
-  // A new set from Claude brings the box back to the latest, wherever it was.
   const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
-  await ui.press({ key: 'nav-older' })
+  await ui.press({ key: 'drop-21000-1' })
+  expect(await ui.find({ type: 'Text', text: /^Old step$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Other old step/ })).toBeDefined()
+  // Ticking the rest closes the box.
+  await ui.press({ key: 'tick-21000-0' })
+  await ui.press({ key: 'tick-21000-1' })
+  expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
   await ui.unmount()
-  now = 33_000
-  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Four', actions: [{ text: 'Do Four', why: 'w' }] } as never)
-  const after = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
-  expect(await after.find({ type: 'Text', text: 'Four' })).toBeDefined()
-  expect(await after.find({ type: 'Text', text: 'LATEST STEPS' })).toBeDefined()
-  await after.unmount()
 })
 
 test('in a short box, clicking a folded action opens it in full', async ($, on) => {
@@ -306,68 +258,32 @@ test('in a short box, clicking a folded action opens it in full', async ($, on) 
   await ui.unmount()
 })
 
-test('Clear drops the set shown so the box moves on, and Clear all empties it', async ($, on) => {
+test('Clear empties the box', async ($, on) => {
   let now = 1_000
   on('clock.now', () => ({ value: now }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  const ask = async (title: string, at: number) => {
-    now = at
-    await $.tool.call({ tool: 'mcp__action-items__action_items', title, actions: [{ text: `Do ${title}`, why: 'Test' }] } as never)
-  }
-  await ask('Old one', 1_000)
-  await ask('Middle one', 2_000)
-  await ask('New one', 3_000)
-
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Old one', actions: [{ text: 'Do old', why: 'Test' }] } as never)
+  now = 2_000
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'New one', actions: [{ text: 'Do new', why: 'Test' }] } as never)
   const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
-  expect(await ui.find({ type: 'Text', text: 'New one' })).toBeDefined()
-  expect(await ui.find({ key: 'clear-all' })).toBeDefined()
-  // Clear drops the latest for good; the next newest becomes the latest.
-  await ui.press({ key: 'clear' })
-  expect(await ui.find({ type: 'Text', text: 'New one' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: 'Middle one' })).toBeDefined()
-  // Clearing an older set goes back to the latest.
-  await ui.press({ key: 'nav-older' })
-  expect(await ui.find({ type: 'Text', text: 'Old one' })).toBeDefined()
-  await ui.press({ key: 'clear' })
-  expect(await ui.find({ type: 'Text', text: 'Middle one' })).toBeDefined()
-  // One left: still labelled latest, no Clear all; Clear closes the box.
   expect(await ui.find({ key: 'clear-all' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: 'LATEST STEPS' })).toBeDefined()
   await ui.press({ key: 'clear' })
   expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
   await ui.unmount()
-
-  // Clear all empties the box, older sets included.
-  await ask('A', 4_000)
-  await ask('B', 5_000)
-  for (const surface of SURFACES) {
-    const box = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
-    if (surface === 'terminal') {
-      await box.press({ key: 'clear-all' })
-      expect(await box.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
-    }
-    await box.unmount()
-  }
   expect(await $.command.run({ command: 'action-items' } as never)).toEqual({ text: 'Nothing open: Claude needs nothing from you right now.' })
 })
 
-test('/action-items clear, clear all and hide work from the prompt, mid-turn too', async ($, on) => {
+test('/action-items clear and hide work from the prompt, mid-turn too', async ($, on) => {
   let now = 1_000
   on('clock.now', () => ({ value: now }))
-  const ask = async (title: string, at: number) => {
-    now = at
-    await $.tool.call({ tool: 'mcp__action-items__action_items', title, actions: [{ text: `Do ${title}`, why: 'Test' }] } as never)
-  }
-  await ask('First', 1_000)
-  await ask('Second', 2_000)
-  expect(await $.command.run({ command: 'action-items', args: 'clear' } as never)).toEqual({ text: 'Cleared Second.' })
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'First', actions: [{ text: 'Do First', why: 'Test' }] } as never)
   expect(await $.command.run({ command: 'action-items', args: 'hide' } as never)).toEqual({ text: 'Box hidden. /action-items brings it back.' })
   expect(await $.command.run({ command: 'action-items', args: '' } as never)).toEqual({ text: 'Showing First (1 to do) above the prompt.' })
+  expect(await $.command.run({ command: 'action-items', args: 'clear' } as never)).toEqual({ text: 'Box emptied.' })
   expect(await $.command.run({ command: 'action-items', args: 'clear all' } as never)).toEqual({ text: 'Box emptied.' })
-  expect(await $.command.run({ command: 'action-items', args: 'clear' } as never)).toEqual({ text: 'Nothing to clear.' })
 })
 
 test('while Claude works the box folds to one line; /action-items opens it until the next prompt', async ($, on) => {
@@ -381,7 +297,6 @@ test('while Claude works the box folds to one line; /action-items opens it until
   const WORKING = { ...BAND, props: { ...BAND.props, isWorking: true } }
   let ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...WORKING } as never)
   expect(await ui.find({ type: 'Text', text: /Ship · 1 to decide/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'LATEST STEPS' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Merge now\?/ })).toBeUndefined()
   await ui.unmount()
   await $.command.run({ command: 'action-items' } as never)
