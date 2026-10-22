@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
+import { addSet, boxNote, clearTitles, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -56,6 +56,47 @@ test('keeps the newest first and replaces a same-titled set', () => {
   list = addSet(list, mk('2', 'B'))
   list = addSet(list, mk('3', 'A'))
   expect(list.map(s => s.id)).toEqual(['3', '2'])
+})
+
+test('a same-titled set updates in place: ticked actions and answers stay, new asks are added', () => {
+  let list: StepSet[] = [parsed({ title: 'Deploy', decisions: [{ question: 'Region?', options: ['a', 'b'] }], actions: [{ text: 'Sign in', why: 'w' }, { text: 'Old step', why: 'w' }] })]
+  list = toggleAction(list, '1', 1)
+  list = pick(list, '1', 0, 'b')
+  const update = parseSet({ title: 'Deploy', decisions: [{ question: 'Region?', options: ['a', 'b'] }], actions: [{ text: 'Sign in', why: 'w' }, { text: 'Run the new script', why: 'w2' }] }, '2', 2_000)
+  if (typeof update === 'string') throw new Error(update)
+  list = addSet(list, update)
+  expect(list.length).toBe(1)
+  expect(list[0]!.id).toBe('2')
+  expect(list[0]!.items.map(i => i.text)).toEqual(['Region?', 'Sign in', 'Run the new script'])
+  expect(list[0]!.items[1]).toMatchObject({ isDone: true })
+  expect(list[0]!.items[0]).toMatchObject({ answer: 'b' })
+  expect(countText(list[0]!)).toBe('1 to do')
+})
+
+test('clear drops sets by title; the box note lists what is still open', () => {
+  const a = parsed({ title: 'A', actions: [{ text: 'x', why: 'w' }] })
+  const b: StepSet = { ...parsed({ title: 'B', decisions: [{ question: 'Q?' }] }), id: '2' }
+  expect(clearTitles([b, a], ['A']).map(s => s.title)).toEqual(['B'])
+  expect(boxNote([b, a])).toContain('"B" (1 to decide), "A" (1 to do)')
+  expect(boxNote([])).toBeUndefined()
+})
+
+test('a later call updates the box on the fly, clears answered questions and drops stale sets in one go', async ($, on) => {
+  let now = 1_000
+  on('clock.now', () => ({ value: now }))
+  const call = (input: Record<string, unknown>) => $.tool.call({ tool: 'mcp__action-items__action_items', ...input } as never)
+  await call({ title: 'Old task', actions: [{ text: 'Old step', why: 'w' }] })
+  now = 2_000
+  await call({ title: 'Setup', decisions: [{ question: 'Which env?' }], actions: [{ text: 'Sign in', why: 'w' }] })
+  now = 3_000
+  const ran = await call({ title: 'Setup', answered: [1], clear: ['Old task'], actions: [{ text: 'Sign in', why: 'w' }, { text: 'Run the script', why: 'w2', command: './go.sh' }] })
+  expect(String(ran.result)).toContain('Updated')
+  expect(String(ran.result)).toContain('2 to do')
+  expect(String(ran.result)).not.toContain('Old task')
+  // A typed answer cleared with no new asks still works on its own.
+  now = 4_000
+  await call({ title: 'Q', decisions: [{ question: 'A?' }] })
+  expect(String((await call({ title: 'Q', answered: [1] })).result)).toContain('Cleared')
 })
 
 test('the tool call saves the set and answers the model', async ($, on) => {

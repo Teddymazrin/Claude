@@ -7,7 +7,7 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | [Bare View](#bare-view) | 1.15.2 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.14.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Session Manager](#session-manager) | 1.1.6 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; writes a handoff note by itself before the cache runs out while you're away; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
-| [Action Items](#action-items) | 6.4.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
+| [Action Items](#action-items) | 6.5.0 | Both | Everything Claude needs from you, decisions apart from actions, in a box above the prompt; clear old asks you don't need |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
 | [Context Lens](#context-lens) | 1.2.0 | Both | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -192,6 +192,8 @@ The box opens on Decide while a question waits and moves to Do once they're answ
 **In a short window** the Do tab first drops its blank lines, then keeps the command on one action and folds the rest to one row each (title · command, with Copy). Click a folded action's title (**▸**) to open it, and the open one's title (**▾**) to fold it. Ticked actions fold into **✓ N done ▸ show**, which lists them again so you can untick one.
 
 **Answering by typing:** a typed message doesn't wipe the box. Claude is told which questions are still open and clears only the ones your message answered.
+
+**Updates on the fly:** when what Claude needs changes, it updates the box in the same turn, even if older asks are still in it. A set with the same title is updated in place, so what you already ticked or answered stays; sets that no longer apply are dropped. While the box holds open asks, Claude is reminded of them with each message.
 
 **Only Claude fills it:** the box shows only what Claude put there itself. The mod doesn't guess from the reply, so nothing in the box is a false alarm. If Claude forgets the box, the steps are still in its reply.
 

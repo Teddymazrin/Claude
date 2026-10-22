@@ -1,5 +1,18 @@
 # Action Items log
 
+## 6.5.0 (2026-10-22)
+
+**Asked for:** the box doesn't update on the fly. With an older ask still in it, new steps didn't show up until you asked for the box again.
+
+**Cause:** only Claude fills the box, and nothing told it to refresh one that was already there. While questions were open, its instructions also said to clear them with a call that carried "nothing else", and to make "one call per turn", so the new steps never went in.
+
+**Changed:**
+- Instructions: the box never updates itself, so Claude calls the tool again in any turn where what it needs changes, even with older asks still in the box
+- Same title updates that set in place: actions you ticked and questions you answered stay that way, new asks are added, and ones Claude left out drop off
+- One call can clear questions you answered by typing (`answered`), drop sets that no longer apply (`clear`) and add new asks together
+- While the box holds open asks, each prompt carries one short line naming them (about 40 tokens, only while something is open) so Claude knows to update them instead of leaving them stale
+- The tool's reply names other sets still open, so Claude can drop the stale ones
+
 ## 6.4.0 (2026-10-10)
 
 **Asked for:** both boxes stay in view as the window shrinks.

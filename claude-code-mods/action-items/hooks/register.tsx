@@ -47,7 +47,8 @@ The user keeps an Action Items box above the prompt for everything you need from
     - \`detail\`: one line on how, and what they should see when it worked ("Prints 3 subscriptions, each marked Assigned").
     - \`command\`: the exact command where there is one (real paths, placeholders in <angle brackets>).
 - One call per turn with a short \`title\` (the task), all decisions and actions together.
-- When the user answers a waiting question by typing instead of clicking, you're told which are still open: call the tool with that \`title\` and \`answered\` (the questions' numbers) to clear them.
+- The box never updates itself: call the tool again in any turn where what you need changes, even while it still holds older asks. Same \`title\` updates that set in place (what they already ticked or answered stays); a new title adds a set. Put titles of sets that no longer apply in \`clear\`.
+- When the user answers a waiting question by typing instead of clicking, you're told which are still open: put their numbers in \`answered\` with that \`title\`, in the same call as any new decisions and actions.
 - Then keep your final answer short: say what you did and that what you need is in the box. Don't repeat the options or the steps.
 - Steps or commands for the user go in the box, never only in your reply.
 - A question asked with AskUserQuestion mid-task does not need to go in the box too.
@@ -101,9 +102,30 @@ export const isOpen = (set: StepSet) => pendingDecisions(set).length > 0 || open
 export const isDecided = (set: StepSet) =>
   !set.isSent && decisions(set).length > 0 && decisions(set).every(d => d.answer !== undefined || d.isTyping === true)
 
-/** The newest first, `KEEP` at most; a set with the same title replaces the older one. */
-export const addSet = (list: readonly StepSet[], set: StepSet) =>
-  [set, ...list.filter(s => s.title !== set.title)].slice(0, KEEP)
+/**
+ * An update to a set already in the box: the new asks replace the old, but an action the person
+ * ticked or a question they answered stays that way when the same text comes back.
+ */
+export const mergeSet = (old: StepSet, set: StepSet): StepSet => {
+  const items = set.items.map(it => {
+    const was = old.items.find(o => o.kind === it.kind && o.text === it.text)
+    if (!was) return it
+    if (it.kind === 'do' && was.kind === 'do') return { ...it, isDone: was.isDone }
+    if (it.kind === 'decide' && was.kind === 'decide' && was.answer !== undefined && !was.isTyping)
+      return { ...it, answer: was.answer, ...(was.isDelivered ? { isDelivered: true } : {}) }
+    return it
+  })
+  return closeIfDecided({ ...set, items })
+}
+
+/** The newest first, `KEEP` at most; a set with the same title is updated in place of the older one. */
+export const addSet = (list: readonly StepSet[], set: StepSet) => {
+  const old = list.find(s => s.title === set.title)
+  return [old ? mergeSet(old, set) : set, ...list.filter(s => s.title !== set.title)].slice(0, KEEP)
+}
+
+/** Drops the sets Claude says no longer apply, by title. */
+export const clearTitles = (list: readonly StepSet[], titles: readonly string[]) => list.filter(s => !titles.includes(s.title))
 
 const editItem = (list: readonly StepSet[], id: string, index: number, fn: (item: Item) => Item) =>
   list.map(s => (s.id !== id ? s : { ...s, items: s.items.map((it, i) => (i === index ? fn(it) : it)) }))
@@ -121,6 +143,12 @@ export const markSent = (list: readonly StepSet[], id: string) => list.map(s => 
 
 /** Drops a set the person no longer cares about, done or not, so the box never falls back to it. */
 export const clearSet = (list: readonly StepSet[], id: string) => list.filter(s => s.id !== id)
+
+// A merged set whose questions were all answered and sent before stays sent.
+function closeIfDecided(set: StepSet): StepSet {
+  const ds = decisions(set)
+  return ds.length > 0 && ds.every(d => d.answer !== undefined && d.isDelivered) ? { ...set, isSent: true } : set
+}
 
 /** Marks the set sent once no decision waits any more. */
 const closeIfDone = (set: StepSet): StepSet =>
@@ -158,7 +186,14 @@ export const openNote = (set: StepSet) => {
     .map((d, i) => ({ d, n: i + 1 }))
     .filter(x => isPending(set, x.d))
     .map(x => `${x.n}. ${x.d.text}`)
-  return `The Action Items box ("${set.title}") still has open questions:\n${open.join('\n')}\nIf this message answers any of them, call ${TOOL_ID} with \`title\` "${set.title}" and \`answered\` listing their numbers, so the box clears them. Leave the rest open; don't ask them again in your reply.`
+  return `The Action Items box ("${set.title}") still has open questions:\n${open.join('\n')}\nIf this message answers any of them, call ${TOOL_ID} with \`title\` "${set.title}" and \`answered\` listing their numbers, so the box clears them (add any new decisions or actions to the same call). Leave the rest open; don't ask them again in your reply.`
+}
+
+/** What Claude reads with each prompt while the box holds open asks, so it updates them instead of leaving them stale. */
+export const boxNote = (list: readonly StepSet[]) => {
+  const open = list.filter(isOpen)
+  if (open.length === 0) return undefined
+  return `[Action Items] The box holds: ${open.map(s => `"${s.title}" (${countText(s)})`).join(', ')}. If this turn changes what you need from the user, call ${TOOL_ID} again: same title updates it, \`clear\` drops one that no longer applies.`
 }
 
 /** The clicked answers as the person's reply; a typed one is left for them to finish. */
@@ -448,7 +483,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: TOOL,
       description:
-        "Put everything you need from the user in their Action Items box above the prompt: decisions they make (questions, choices, go-aheads) and actions they do themselves (run a script, sign in, check a setting). Call once before your final answer whenever you need something from them.",
+        "Put everything you need from the user in their Action Items box above the prompt: decisions they make (questions, choices, go-aheads) and actions they do themselves (run a script, sign in, check a setting). Call once before your final answer whenever you need something from them, and again whenever that changes: the same title updates a set already in the box.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -469,7 +504,12 @@ export const register: Register = on => {
           answered: {
             type: 'array',
             items: { type: 'number' },
-            description: "Only to clear questions the user answered by typing: their numbers in the box. Send with the set's title and nothing else.",
+            description: "Questions the user answered by typing: their numbers in the box, with that set's title. Can go with new decisions and actions in the same call.",
+          },
+          clear: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Titles of sets in the box that no longer apply, to drop them.',
           },
           actions: {
             type: 'array',
@@ -542,29 +582,45 @@ export const register: Register = on => {
         for (const s of after.filter(s => pendingDecisions(s).length > 0)) context.push(openNote(s))
       }
     }
+    const note = boxNote(await read($, sets))
+    if (note) context.push(note)
     return next({ ...e, context })
   }).catch(($, e, next) => next(e))
 
   on('tool.call', { tool: TOOL_ID }, async ($, e) => {
     const input = e as unknown as Record<string, unknown>
-    // Only clearing questions answered in chat.
-    if (Array.isArray(input.answered) && !Array.isArray(input.decisions) && !Array.isArray(input.actions)) {
+    const hasAsks = Array.isArray(input.decisions) || Array.isArray(input.actions) || Array.isArray(input.steps)
+    const dropped = Array.isArray(input.clear) ? input.clear.map(str).filter(Boolean) : []
+    if (dropped.length > 0) {
+      const left = await save($, l => clearTitles(l, dropped))
+      const id = await read($, band)
+      if (!left.some(s => s.id === id)) await update($, band, () => nextSet(left)?.id ?? null)
+    }
+    // Questions answered in chat, cleared first so an update in the same call keeps them answered.
+    if (Array.isArray(input.answered)) {
       const numbers = input.answered.filter((n): n is number => typeof n === 'number')
       const title = str(input.title)
       const id = await read($, band)
       const list = await read($, sets)
       const target = list.find(s => s.title === title) ?? list.find(s => s.id === id)
-      if (!target) return { result: 'Not saved: no set with that title in the box.', isError: true }
-      const next = markAnswered(target, numbers)
-      await save($, l => l.map(s => (s.id === target.id ? next : s)))
-      return { result: `Cleared from the box. Left in it: ${countText(next)}.` }
+      if (!target && !hasAsks) return { result: 'Not saved: no set with that title in the box.', isError: true }
+      if (target) {
+        const next = markAnswered(target, numbers)
+        await save($, l => l.map(s => (s.id === target.id ? next : s)))
+        if (!hasAsks) return { result: `Cleared from the box. Left in it: ${countText(next)}.` }
+      }
     }
+    if (!hasAsks && dropped.length > 0) return { result: `Dropped from the box: ${dropped.join(', ')}.` }
     const now = await $.clock.now()
-    const parsed = parseSet(e as unknown as Record<string, unknown>, String(now), now)
+    const parsed = parseSet(input, String(now), now)
     if (typeof parsed === 'string') return { result: `Not saved: ${parsed}`, isError: true }
+    const isUpdate = (await read($, sets)).some(s => s.title === parsed.title)
     await show($, parsed)
+    const shown = (await read($, sets)).find(s => s.id === parsed.id) ?? parsed
     const clicks = decisions(parsed).some(d => d.options.length > 0) ? ' Their clicked answers come back to you as their next message.' : ''
-    return { result: `Shown in the Action Items box above the prompt (${countText(parsed)}). Tell the user it is there instead of repeating it.${clicks}` }
+    const others = (await read($, sets)).filter(s => s.id !== parsed.id && isOpen(s))
+    const older = others.length > 0 ? ` Also still open: ${others.map(s => `"${s.title}"`).join(', ')}; put any that no longer apply in \`clear\` next time.` : ''
+    return { result: `${isUpdate ? 'Updated' : 'Shown'} in the Action Items box above the prompt (${countText(shown)}). Tell the user it is there instead of repeating it.${clicks}${older}` }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
