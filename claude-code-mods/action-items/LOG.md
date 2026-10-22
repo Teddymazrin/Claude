@@ -1,5 +1,15 @@
 # Action Items log
 
+## 7.2.0 (2026-10-22)
+
+**Asked for:** (screenshot) going back and forth between **▸ info** and the task to get the whole picture is a pain.
+
+**Changed:**
+- The action you're on (the next one not ticked) shows its why and how-to under it by itself. Tick it and the next one opens. The question waiting first does the same with its context
+- **▸ all info** next to the tabs shows the why and how-to of every ask at once. It stays on in later sessions until you switch it off
+- **▸ info** on an ask still opens or closes that one by hand, including closing the one that opened by itself
+- In a short window, opened info still counts toward the fit, so the box folds sooner with **all info** on
+
 ## 7.1.0 (2026-10-22)
 
 **Asked for:** change Clear to "Mark as done".

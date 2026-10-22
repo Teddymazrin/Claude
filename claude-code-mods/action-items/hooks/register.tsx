@@ -17,6 +17,8 @@ const openAction = atom({ plugin: 'action-items', key: 'focus' } as const, null)
 const showDone = atom({ plugin: 'action-items', key: 'showDone' } as const, false)
 // The asks whose info is opened: "a:<set id>:<index>" for an action, "d:..." for a decision.
 const info = atom({ plugin: 'action-items', key: 'info' } as const, [] as string[])
+// Info shown on every ask at once; kept across sessions in the store.
+const infoAll = atom({ plugin: 'action-items', key: 'infoAll' } as const, false)
 // True once a system prompt carries the instructions; until then each prompt carries the reminder.
 const composed = atom({ plugin: 'action-items', key: 'composed' } as const, false)
 // True once /action-items opened the box out mid-turn; each new prompt folds it again.
@@ -631,6 +633,9 @@ export const register: Register = on => {
     })
     // Immediate, so `done` and `hide` work while Claude is still working, when the box's buttons wait for the turn to end.
     await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you', argumentHint: '[done | hide]', immediate: true })
+    try {
+      if ((await $.store.get('infoAll')) === true) await update($, infoAll, () => true)
+    } catch {}
     // Bring back this conversation's box when it is resumed; sets from before decisions existed are dropped.
     if ((await read($, sets)).length === 0) {
       const stored = (await $.store.get(storeKey(await $.session.id()))) as StepSet[] | undefined
@@ -763,11 +768,28 @@ export const register: Register = on => {
     const answered = decide.filter(x => !isPending(set, x.it))
     const waiting = decide.filter(x => isPending(set, x.it))
     const focus = waiting.find(x => !x.it.isTyping)?.i
+    const nextOpen = doing.find(x => !x.it.isDone)?.i
     const drop = (i: number) => () => save($, l => dropItem(l, set.id, i))
+    // The ask you are on (the next open action, the question waiting first) shows its info by itself,
+    // so the task and its context sit together; "all info" opens every one. "x:" marks one closed by hand.
     const openInfo = await read($, info)
-    const isInfo = (kind: 'a' | 'd', i: number) => openInfo.includes(`${kind}:${set.id}:${i}`)
-    const toggleInfo = (kind: 'a' | 'd', i: number) => () =>
-      update($, info, v => (v.includes(`${kind}:${set.id}:${i}`) ? v.filter(k => k !== `${kind}:${set.id}:${i}`) : [...v, `${kind}:${set.id}:${i}`]))
+    const isAll = await read($, infoAll)
+    const infoKey = (kind: 'a' | 'd', i: number) => `${kind}:${set.id}:${i}`
+    const isInfo = (kind: 'a' | 'd', i: number) =>
+      !openInfo.includes(`x:${infoKey(kind, i)}`) && (isAll || openInfo.includes(infoKey(kind, i)) || i === (kind === 'a' ? nextOpen : focus))
+    const toggleInfo = (kind: 'a' | 'd', i: number) => () => {
+      const k = infoKey(kind, i)
+      const isShown = isInfo(kind, i)
+      return update($, info, v => [...v.filter(x => x !== k && x !== `x:${k}`), isShown ? `x:${k}` : k])
+    }
+    const toggleAll = async () => {
+      const isOn = await update($, infoAll, v => !v)
+      // Picking all or none starts over from what was opened or closed by hand.
+      await update($, info, () => [])
+      try {
+        await $.store.set('infoAll', isOn)
+      } catch {}
+    }
     const decidePart = (
       <Box key="decide-part" flexDirection="column">
         {answered.length > 0 && waiting.length > 0 && (
@@ -786,7 +808,6 @@ export const register: Register = on => {
     // its command. Why and how-to show only where the person opened an action's info.
     // Three rows stay free for Bare View's finished checklist, folded to one line beside it.
     const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3, a => isInfo('a', set.items.indexOf(a)))
-    const nextOpen = doing.find(x => !x.it.isDone)?.i
     const isDoneShown = await read($, showDone)
     const shown = level === 0 || isDoneShown ? doing : doing.filter(x => !x.it.isDone)
     const doneCount = doing.filter(x => x.it.isDone).length
@@ -844,6 +865,9 @@ export const register: Register = on => {
           <Box key="tabs" flexDirection="row" marginBottom={1}>
             {decide.length > 0 && tabChip('decide', '?', 'Decide', C.decide, waiting.length)}
             {doing.length > 0 && tabChip('do', '▶', 'Do', C.do, doing.length - doing.filter(x => x.it.isDone).length)}
+            <Box key="info-all-box" flexShrink={0} marginLeft={1}>
+              <Button key="info-all" plain dimColor={!isAll} label={isAll ? '▾ all info' : '▸ all info'} hover={{ bold: true }} onPress={toggleAll} />
+            </Box>
           </Box>
           {current === 'decide' ? decidePart : doPart}
         </Box>

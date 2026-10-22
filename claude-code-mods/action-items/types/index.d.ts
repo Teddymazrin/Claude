@@ -52,8 +52,10 @@ declare module 'claude-code' {
       focus: string | null
       /** Whether ticked actions folded into "✓ N done" are listed again. */
       showDone: boolean
-      /** The asks whose info (why, how-to, context) is opened, as "a:<set id>:<index>" or "d:<set id>:<index>". */
+      /** Info opened by hand ("a:<set id>:<index>", "d:..."), or closed by hand ("x:a:...") where it opens by itself. */
       info: string[]
+      /** Info shown on every ask at once; remembered across sessions. */
+      infoAll: boolean
       /** True once a system prompt this session carries the instructions, so prompts skip the reminder. */
       composed: boolean
       /** True once /action-items opened the box mid-turn; while Claude works it folds to one line otherwise. */

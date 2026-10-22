@@ -35,13 +35,13 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
     expect(await ui.find({ type: 'Text', text: /az login/ })).toBeUndefined()
     await ui.press({ key: 'tab-do' })
     expect(await ui.find({ type: 'Text', text: /az login/ })).toBeDefined()
-    // Why and how-to wait behind info until it is pressed, and fold away again.
-    expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeUndefined()
-    await ui.press({ key: 'info-5000-1' })
+    // The action you are on shows its why and how-to by itself; info folds them away and back.
     expect(await ui.find({ type: 'Text', text: /Pick your work account/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeDefined()
     await ui.press({ key: 'info-5000-1' })
     expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeUndefined()
+    await ui.press({ key: 'info-5000-1' })
+    expect(await ui.find({ type: 'Text', text: /Lets the deploy reach your subscription/ })).toBeDefined()
     await ui.press({ key: 'tab-decide' })
     await ui.unmount()
   }
@@ -102,7 +102,7 @@ test('a typed reply keeps unanswered questions until Claude clears them', async 
   await after.unmount()
 })
 
-test('info is closed by default; a box too short folds the other actions to one row', async ($, on) => {
+test('info opens only on the action you are on; a box too short folds the other actions to one row', async ($, on) => {
   on('clock.now', () => ({ value: 9_000 }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -116,6 +116,7 @@ test('info is closed by default; a box too short folds the other actions to one 
     // Room for all of it: every task and command, but no why or how-to until info is opened.
     const full = await $.ui.mount({ plugin: 'action-items', surface, ...tall } as never)
     expect(await full.find({ type: 'Text', text: /run-6/ })).toBeDefined()
+    expect(await full.find({ type: 'Text', text: /Why 1/ })).toBeDefined()
     expect(await full.find({ type: 'Text', text: /Why 6/ })).toBeUndefined()
     expect(await full.find({ type: 'Text', text: /How to do step 6/ })).toBeUndefined()
     await full.press({ key: 'info-9000-5' })
@@ -129,7 +130,7 @@ test('info is closed by default; a box too short folds the other actions to one 
     expect(await ui.find({ key: 'open-9000-5' })).toBeDefined()
     expect(await ui.find({ key: 'copy-9000-5' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^run-6$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Why/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Why [2-6]/ })).toBeUndefined()
     await ui.unmount()
   }
   // Ticking step 1 folds it into "1 done".
@@ -157,9 +158,10 @@ test('one question at a time: the first waiting one opens, its context behind in
   } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
-    expect(await ui.find({ type: 'Text', text: /about first/ })).toBeUndefined()
-    await ui.press({ key: 'dinfo-11000-0' })
+    // The question waiting first shows its context by itself; info folds it away and back.
     expect(await ui.find({ type: 'Text', text: /about first/ })).toBeDefined()
+    await ui.press({ key: 'dinfo-11000-0' })
+    expect(await ui.find({ type: 'Text', text: /about first/ })).toBeUndefined()
     await ui.press({ key: 'dinfo-11000-0' })
     expect(await ui.find({ type: 'Text', text: /Second\?/ })).toBeDefined()
     // Waiting its turn, the second shows neither its info button nor its options.
@@ -171,7 +173,7 @@ test('one question at a time: the first waiting one opens, its context behind in
   await ui.press({ key: 'pick-11000-0-1' })
   expect(await ui.find({ type: 'Text', text: /1 answered/ })).toBeDefined()
   expect(await ui.find({ key: 'dinfo-11000-1' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /about second/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /about second/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -190,10 +192,29 @@ test('opening info on one action leaves the others closed', async ($, on) => {
     await ui.press({ key: 'info-13000-1' })
     expect(await ui.find({ type: 'Text', text: /Reason 2/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Howto 2/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Reason 1/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Reason 3/ })).toBeUndefined()
     await ui.press({ key: 'info-13000-1' })
     await ui.unmount()
   }
+})
+
+test('all info shows every why and how-to at once, and is remembered', async ($, on) => {
+  on('clock.now', () => ({ value: 14_000 }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  const actions = [1, 2, 3].map(n => ({ text: `Task ${n}`, why: `Reason ${n}`, detail: `Howto ${n}` }))
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'All', actions } as never)
+  const tall = { ...BAND, props: { ...BAND.props, maxRows: 40, scroll: { offset: 0, bodyRows: 40 } } }
+  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...tall } as never)
+  expect(await ui.find({ type: 'Text', text: /Reason 3/ })).toBeUndefined()
+  await ui.press({ key: 'info-all' })
+  for (const n of [1, 2, 3]) expect(await ui.find({ type: 'Text', text: new RegExp(`Howto ${n}`) })).toBeDefined()
+  await ui.press({ key: 'info-all' })
+  expect(await ui.find({ type: 'Text', text: /Reason 3/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Reason 1/ })).toBeDefined()
+  await ui.unmount()
 })
 
 test('new asks go on top; unfinished ones from before stay under Earlier until ticked or dropped', async ($, on) => {
