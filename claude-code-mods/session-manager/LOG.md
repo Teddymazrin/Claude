@@ -1,5 +1,11 @@
 # Session Manager log
 
+## 1.2.0 (2026-10-23)
+
+**Asked for:** the handoff written while away opened under "Compacted while idle, before the prompt cache expired". That line is Claude Code's own idle compaction, which summarizes a long idle chat at 90% of the cache's life (54 minutes of an hour). The note came a minute later, at 55, so it was written from the summary, not the whole chat.
+
+**What changed:** the note is written at 85% of the cache's life (about 51 minutes on a 1-hour cache), before the compaction, so it comes from the whole chat. A shorter cache still gets at least 5 minutes. Claude Code can still compact the chat afterwards; that no longer touches the note. To stop the compaction too, set `"idleCompaction": false` in settings.json.
+
 ## 1.1.6 (2026-10-18)
 
 **Found:** the away box's line said "Copy prompt", but its button reads **⧉ Copy & continue in a new chat**.

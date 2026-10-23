@@ -18,8 +18,16 @@ export const coldTitle = (cache: string) => cache.replace(/^cache cold/, 'Cache 
 /** Which cold spell this is: the last reply and the model the next request goes to. A new reply or another switch is a new one. */
 export const coldKey = (last: LastCall, model: string | null | undefined) => `${last.at}|${model ?? ''}`
 
-/** How long before the cache goes cold the note is written while you are away. */
+/** The least time before the cache goes cold that the note is written while you are away. */
 export const AUTO_LEAD_MS = 5 * 60_000
+/**
+ * Claude Code compacts an idle chat at 90% of the cache's life (54 minutes of an hour), so the note is written by 85%
+ * (51 minutes), from the whole chat rather than its summary.
+ */
+export const AUTO_WRITE_AT_PERCENT = 85
+
+/** How long before the cache goes cold the note is written: before Claude Code's idle compaction, and at least AUTO_LEAD_MS. */
+export const autoLeadMs = (ttlMs: number) => Math.max(AUTO_LEAD_MS, Math.ceil((ttlMs * (100 - AUTO_WRITE_AT_PERCENT)) / 100))
 /** Under this, the write is left alone: too close to the edge to finish in time. */
 export const AUTO_MIN_LEFT_MS = 30_000
 /** Below this much context the chat is cheap to re-read, so no note is written. */
@@ -27,7 +35,7 @@ export const AUTO_MIN_CONTEXT = 20
 
 /**
  * Whether to write the handoff note now, from the cache, while you are away: the cache is warm for the model the
- * next message goes to and goes cold within AUTO_LEAD_MS, the chat is big enough to matter, nothing is running,
+ * next message goes to and goes cold within autoLeadMs, the chat is big enough to matter, nothing is running,
  * and no note was written since the last reply. A cache too short to be away from (the API's 5 minutes) never does.
  */
 export const shouldAutoNote = (a: {
@@ -45,7 +53,7 @@ export const shouldAutoNote = (a: {
   if (noteAt !== null && noteAt >= last.at) return false
   if (nextModel && baseModel(nextModel) !== baseModel(last.model)) return false
   const left = last.at + ttlMs - now
-  return left <= AUTO_LEAD_MS && left > AUTO_MIN_LEFT_MS
+  return left <= autoLeadMs(ttlMs) && left > AUTO_MIN_LEFT_MS
 }
 
 

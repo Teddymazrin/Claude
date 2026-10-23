@@ -6,7 +6,7 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | --- | --- | --- | --- |
 | [Bare View](#bare-view) | 1.15.2 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.14.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
-| [Session Manager](#session-manager) | 1.1.6 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; writes a handoff note by itself before the cache runs out while you're away; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
+| [Session Manager](#session-manager) | 1.2.0 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; writes a handoff note by itself before the cache runs out while you're away; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
 | [Action Items](#action-items) | 8.0.0 | Both | Everything Claude needs from you, decisions apart from actions, in one list above the prompt; unfinished asks carry over |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
@@ -129,7 +129,7 @@ Whenever the prompt cache has gone cold, or you've switched models, whatever the
 
 Once the cache has gone cold, writing a handoff note re-reads the whole chat at full price, the very cost it's meant to avoid. So when you step away, Session Manager writes the note for you while the chat is still cheap to read:
 
-- **When:** about 5 minutes before the cache runs out (about 55 minutes after Claude's last reply on a subscription), once per break
+- **When:** at 85% of the cache's life (about 51 minutes after Claude's last reply on a subscription), once per break. That is before Claude Code's own idle compaction at 90% (54 minutes), so the note is written from the whole chat, not a summary
 - **Only if it's worth it:** the chat is at least 20% full, no reply is running, and you haven't switched models. Never on an API key, where the cache lasts only 5 minutes
 - **How:** one background request that reads the saved chat and adds nothing to it. Reading it also keeps the cache warm, so you get about another hour
 - **Where it shows:** the note opens in the Handoff pane on the right (on a narrow terminal, **▸ Open** in the box opens it). If you're back before the cache runs out, that's all: keep chatting at the cached price. Once it has run out, an orange box appears above the prompt instead of the cold-cache box:

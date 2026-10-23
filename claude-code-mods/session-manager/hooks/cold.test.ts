@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { AUTO_LEAD_MS, AWAY_TITLE, shouldAutoNote } from './cold'
+import { AUTO_LEAD_MS, AWAY_TITLE, autoLeadMs, shouldAutoNote } from './cold'
 import { autoPrompt, isAway } from './handoff'
 
 const HOUR = 60 * 60_000
@@ -10,11 +10,20 @@ const base = { last, ttlMs: HOUR, now: HOUR - 4 * 60_000, context: 40, nextModel
 test('writes the note from the cache once, a few minutes before it goes cold', () => {
   expect(shouldAutoNote(base)).toBe(true)
   // Too early, and too late to finish.
-  expect(shouldAutoNote({ ...base, now: HOUR - AUTO_LEAD_MS - 60_000 })).toBe(false)
+  expect(shouldAutoNote({ ...base, now: HOUR - autoLeadMs(HOUR) - 60_000 })).toBe(false)
   expect(shouldAutoNote({ ...base, now: HOUR - 10_000 })).toBe(false)
   expect(shouldAutoNote({ ...base, now: HOUR + 1 })).toBe(false)
   // Already written since the last reply.
   expect(shouldAutoNote({ ...base, noteAt: 5 })).toBe(false)
+})
+
+test('writes the note before Claude Code compacts an idle chat at 90% of the cache', () => {
+  // A 1-hour cache: from 51 minutes, 3 minutes before the compaction at 54.
+  expect(autoLeadMs(HOUR)).toBe(9 * 60_000)
+  expect(shouldAutoNote({ ...base, now: 51 * 60_000 })).toBe(true)
+  expect(shouldAutoNote({ ...base, now: 50 * 60_000 })).toBe(false)
+  // A shorter cache still gets at least 5 minutes.
+  expect(autoLeadMs(20 * 60_000)).toBe(AUTO_LEAD_MS)
 })
 
 test('skips small chats, running turns, a switched model and the API 5-minute cache', () => {

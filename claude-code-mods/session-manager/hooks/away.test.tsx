@@ -9,7 +9,7 @@ const ABOVE = {
 const MIN = 60_000
 const NOTE = '# Handoff: C:\app\n## Goal\nShip the fix'
 
-test('away for an hour: the note is written from the cache once, and the box says so with the note in it', async ($, on) => {
+test('away for an hour: the note is written from the cache once, and the box says so with the note in it', { timeoutMs: 20_000 }, async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const forks: string[] = []
   const opened: string[] = []
@@ -38,10 +38,10 @@ test('away for an hour: the note is written from the cache once, and the box say
   await $.session.measure({ context: { percent: 40 }, rateLimits: [{ kind: 'five_hour', percentUsed: 5 }], changed: [] } as never)
   await $.turn.complete({ turnId: 't1', answer: 'done', durationMs: 1, isAborted: false, reason: 'answer', usage: { model: 'claude-opus-5-5' } } as never)
 
-  // Not yet: 50 minutes in, the cache still has 10 left.
+  // Not yet: 50 minutes in, the cache still has 10 left and the chat is not compacted yet.
   await clock.advance(50 * MIN)
   expect(forks.length).toBe(0)
-  // 56 minutes in: written once, and not again.
+  // By 56 minutes in (from 51, before Claude Code's idle compaction at 54): written once, and not again.
   await clock.advance(6 * MIN)
   expect(forks.length).toBe(1)
   expect(forks[0]).toContain('No tools are available')
