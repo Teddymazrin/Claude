@@ -1,6 +1,6 @@
 {
   "name": "session-manager",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Session Manager. Plan, model, effort, context, prompt cache and usage (a full row in the terminal, a short footer line in the desktop app); a box when the cache goes cold; handoff reminders at 50/65/80% and /handoff, which writes a note to continue from in a fresh chat",
   "author": {
     "name": "Teddymazrin"

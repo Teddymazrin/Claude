@@ -1,5 +1,13 @@
 # Session Manager log
 
+## 1.2.1 (2026-10-23)
+
+**Found:** three type errors, none of them visible when the mod runs.
+
+**What changed:**
+- `register.tsx` now imports `Limit`, the type behind the **usage** and **weekly** parts of the status row
+- The pane test checked the **⧉ Copy & continue in a new chat** and **↻ Clear this chat & continue with note** buttons by `label`, which the test kit ignores, so it only checked that some button was there. It now checks each button's wording with `text`; a wrong wording fails the test
+
 ## 1.2.0 (2026-10-23)
 
 **Asked for:** the handoff written while away opened under "Compacted while idle, before the prompt cache expired". That line is Claude Code's own idle compaction, which summarizes a long idle chat at 90% of the cache's life (54 minutes of an hour). The note came a minute later, at 55, so it was written from the summary, not the whole chat.

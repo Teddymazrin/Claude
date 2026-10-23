@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, SessionRateLimit, Timer } from 'claude-code'
 
-import type { Note, Plan, Seen } from '../types'
+import type { Limit, Note, Plan, Seen } from '../types'
 import { AWAY_TITLE, COLD_WHY, awayWhy, coldKey, coldSwitchWhy, coldTitle, shouldAutoNote } from './cold'
 import {
   AMBER,
