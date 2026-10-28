@@ -11,12 +11,15 @@ const TOOL_ID = `mcp__${PLUGIN}__${TOOL}`
 const sets = atom({ plugin: 'action-items', key: 'sets' } as const, [])
 const band = atom({ plugin: 'action-items', key: 'band' } as const, null)
 const tab = atom({ plugin: 'action-items', key: 'tab' } as const, null)
-// The action opened in full ("<set id>:<index>") when the box is too short to open them all.
-const openAction = atom({ plugin: 'action-items', key: 'focus' } as const, null)
 // Whether ticked actions folded into "✓ N done" are listed again, to untick one.
 const showDone = atom({ plugin: 'action-items', key: 'showDone' } as const, false)
-// The asks whose info is opened: "a:<set id>:<index>" for an action, "d:..." for a decision.
-const info = atom({ plugin: 'action-items', key: 'info' } as const, [] as string[])
+// Whether asks carried over from before are listed, or folded into "N earlier ▸" under the new ones.
+const showEarlier = atom({ plugin: 'action-items', key: 'showEarlier' } as const, false)
+// The question whose info is open ("<set id>:<index>"), and whether it shows in the side pane or, where
+// no pane could be placed, in a small box under the question. Info never opens by itself.
+const infoFor = atom({ plugin: 'action-items', key: 'infoFor' } as const, null)
+const infoInPane = atom({ plugin: 'action-items', key: 'infoInPane' } as const, false)
+const INFO_PANE = 'action-items-info'
 // True once a system prompt carries the instructions; until then each prompt carries the reminder.
 const composed = atom({ plugin: 'action-items', key: 'composed' } as const, false)
 // True once /action-items opened the box out mid-turn; each new prompt folds it again.
@@ -40,18 +43,15 @@ const C = {
 const INSTRUCTIONS = `# Action Items box
 The user keeps an Action Items box above the prompt for everything you need from them. It shows decisions (questions they answer) apart from actions (things they do themselves), so they never have to dig through your reply to find what you are waiting on.
 - Whenever you end a turn needing something from the user, call \`${TOOL_ID}\` before your final answer (load it with ToolSearch "select:${TOOL_ID}" if it is not loaded). That covers:
-  - \`decisions\`: any question you want answered, a choice between approaches, information only they have, a go-ahead. Give 2-4 short \`options\` when the answer is one of a few choices; they click one and it comes back to you as their reply. Leave \`options\` out for an open question. Add a \`detail\` line when the choice needs context (what each option means, what you'd recommend).
-  - \`actions\`: what they must do themselves: run a script, fill in a parameter, sign in, check a portal setting, restart something. Only what actually needs them; never filler like "look over the code" or "test the button" with nothing specific to find. Write each so they could do it without reading your reply:
-    - \`text\`: one step, as a command, 20 words or fewer: where and what ("In PowerShell, run the setup script", not "Check it works"). A condition goes first: "If the light is red, stop the pump."
-    - \`check\`: only when the result matters, one sentence that starts with "Make sure that" ("Make sure that the output shows 3 subscriptions.").
-    - \`command\`: the exact command where there is one (real paths, placeholders in <angle brackets>).
-    - \`caution\` (risk to data, a service or access) or \`warning\` (risk to people): the command or condition first, then the risk. Say "You cannot undo this step." when that is true.
-  - \`intro\`: 1 to 3 short sentences for the whole list, as in an STE procedure: what the steps do and what the user must have before they start. No commands. Put the reason here once, not on each step.
-  - Write the intro and every action in Simplified Technical English (ASD-STE100): simple common words, one name for one thing, keep "the", "a" and "that". The intro and notices: 25 words or fewer a sentence. Never contractions, semicolons, should/may/might/could/would (use must/can/will), present perfect, "-ing" verbs, passive voice, phrasal verbs ("set up": install or configure), check/verify/confirm/ensure (write "make sure that"), e.g./i.e./etc., or simply/just/easily. Commands, paths, on-screen labels, names and numbers stay exactly as they are.
+  - \`decisions\`: any question you want answered, a choice between approaches, information only they have, a go-ahead. Give 2-4 short \`options\` when the answer is one of a few choices, the one you recommend first (the box labels it "(recommended)"); they click one and it comes back to you as their reply. Leave \`options\` out for an open question. Add a \`detail\` line when the choice needs context (what each option means, what you'd recommend).
+  - \`actions\`: what they must do themselves: run a command, sign in, change a setting, restart something. Only what actually needs them; never filler like "look over the code".
+    - \`text\`: one short, high-level step in plain everyday words, about 8 words ("Turn off the installed plugin", "Sign in to Azure"). No warnings, explanations or "make sure" notes: say any risk once in your reply instead.
+    - \`command\`: the exact command where there is one (real paths, placeholders in <angle brackets>). Keep it short enough to read at a glance: one line, run from a short path (\`cd\` into the folder first) rather than long absolute or temp paths.
+  - Keep the list short: the fewest steps that get it done.
 - One call per turn with a short \`title\` (the task), all decisions and actions together.
 - The box never updates itself: call the tool again in any turn where what you need changes, even while it still holds older asks. Give only what is new or changed: steps the user has not finished stay in the box by themselves, under "Earlier", until they tick or clear them.
 - When the user answers a waiting question by typing instead of clicking, you're told which are still open: put their numbers in \`answered\` with that \`title\`, in the same call as any new decisions and actions.
-- With each message you're told the open actions by number. When the conversation shows one is finished (the user said so, they ran it, or your own tool result shows its outcome), put its number in \`done\` with that \`title\`, so the box stays current without the user ticking it. Commands that ran exactly as written tick themselves.
+- With each message you're told the open actions by number. When the conversation shows one is finished (the user said so, they ran it, or your own tool result shows its outcome), put its number in \`done\` with that \`title\`, so the box stays current without the user ticking it. Commands that ran exactly as written tick themselves. An open action that is no longer needed or that a newer step replaces is not done: put its number in \`remove\` instead.
 - Then keep your final answer short: say what you did and that what you need is in the box. Don't repeat the options or the steps.
 - Steps or commands for the user go in the box, never only in your reply.
 - A question asked with AskUserQuestion mid-task does not need to go in the box too.
@@ -63,32 +63,6 @@ export const REMINDER = `[Action Items] Anything you need from the user (decisio
 export const withReminder = (context: readonly string[], isComposed: boolean) => (isComposed ? [...context] : [...context, REMINDER])
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
-
-// Simplified Technical English (ASD-STE100), the rules a machine can check without a model call.
-const STE_BANNED: [RegExp, string][] = [
-  [/;/, 'a semicolon (write two sentences)'],
-  [/\b\w+n['’]t\b|['’](re|ll|ve|d|m)\b|\b(it|that|there|here|what|let)['’]s\b/i, 'a contraction'],
-  [/\b(should|might|could|would)\b|\bmay\b/, '"should", "may", "might", "could" or "would" (use must, can or will)'],
-  [/\b(has|have|had) been\b/i, 'the present perfect'],
-  [/\b(verify|verifies|confirm|confirms|ensure|ensures)\b|^check\b|[,.:] check\b/i, 'check/verify/confirm/ensure (write "make sure that")'],
-  [/\be\.g\.|\bi\.e\.|\betc\b/i, 'e.g., i.e. or etc.'],
-  [/\b(simply|just|easily|quickly)\b/i, 'simply, just, easily or quickly (delete it)'],
-  [/\bset up\b/i, '"set up" (write install or configure)'],
-]
-
-/** Words for STE's limit: code, a quote, a bracketed aside or a hyphenated word counts as one. */
-export const steWords = (t: string) =>
-  t.replace(/`[^`]*`/g, 'X').replace(/"[^"]*"/g, 'X').replace(/\([^)]*\)/g, 'X').split(/\s+/).filter(Boolean).length
-
-/** What breaks STE in one field, or nothing. Commands are never checked: they stay exactly as they are. */
-export const steProblems = (t: string, limit: number) => {
-  // Code and quoted labels stay exactly as they are, so the word rules skip them.
-  const plain = t.replace(/`[^`]*`/g, 'X').replace(/"[^"]*"/g, 'X')
-  const found = STE_BANNED.filter(([re]) => re.test(plain)).map(([, what]) => what)
-  // Per sentence: one step is one sentence of `limit` words or fewer.
-  if (t.split(/(?<=[.!?])\s+/).some(sentence => steWords(sentence) > limit)) found.unshift(`a sentence over ${limit} words`)
-  return found
-}
 
 export const parseSet = (input: Record<string, unknown>, id: string, at: number): StepSet | string => {
   const title = str(input.title)
@@ -104,39 +78,16 @@ export const parseSet = (input: Record<string, unknown>, id: string, at: number)
   }
   // `steps` is the older name for actions.
   const actions = Array.isArray(input.actions) ? input.actions : Array.isArray(input.steps) ? input.steps : []
+  // Just the step and its command: an intro, checks and cautions from older callers are dropped.
   for (const raw of actions) {
-    const s = raw as { text?: unknown; check?: unknown; command?: unknown; caution?: unknown; warning?: unknown }
+    const s = raw as { text?: unknown; command?: unknown }
     const text = str(s?.text)
     if (!text) return 'Each action needs a `text`.'
-    const check = str(s.check)
     const command = str(s.command)
-    const caution = str(s.caution)
-    const warning = str(s.warning)
-    // New actions are held to STE; one message lists every problem, so one retry fixes them all.
-    if (Array.isArray(input.actions)) {
-      const fields: [string, string, number][] = [['text', text, 20], ['check', check, 20], ['caution', caution, 25], ['warning', warning, 25]]
-      const problems = fields.flatMap(([name, value, limit]) => (value ? steProblems(value, limit).map(p => `\`${name}\` has ${p}`) : []))
-      if (check && !/^make sure that\b/i.test(check)) problems.push('`check` must start with "Make sure that"')
-      if (problems.length > 0) return `Action "${text}" is not in Simplified Technical English: ${problems.join('; ')}. Rewrite it and call again.`
-    }
-    items.push({
-      kind: 'do',
-      text,
-      ...(check ? { check } : {}),
-      ...(command ? { command } : {}),
-      ...(warning ? { warning } : {}),
-      ...(caution ? { caution } : {}),
-      isDone: false,
-    })
+    items.push({ kind: 'do', text, ...(command ? { command } : {}), isDone: false })
   }
   if (items.length === 0) return 'Give at least one entry in `decisions` or `actions`.'
-  const intro = str(input.intro)
-  if (intro) {
-    const problems = steProblems(intro, 25)
-    if (intro.split(/(?<=[.!?])\s+/).length > 3) problems.push('more than 3 sentences')
-    if (problems.length > 0) return `\`intro\` is not in Simplified Technical English: ${problems.join('; ')}. Rewrite it and call again.`
-  }
-  return { id, title, ...(intro ? { intro } : {}), items, at }
+  return { id, title, items, at }
 }
 
 export const decisions = (set: StepSet) => set.items.filter((i): i is Decision => i.kind === 'decide')
@@ -252,7 +203,7 @@ export const openNote = (set: StepSet) => {
     .map((d, i) => ({ d, n: i + 1 }))
     .filter(x => isPending(set, x.d))
     .map(x => `${x.n}. ${x.d.text}`)
-  return `The Action Items box ("${set.title}") still has open questions:\n${open.join('\n')}\nIf this message answers any of them, call ${TOOL_ID} with \`title\` "${set.title}" and \`answered\` listing their numbers, so the box clears them (add any new decisions or actions to the same call). Leave the rest open; don't ask them again in your reply.`
+  return `[Action Items] Open questions in "${set.title}": ${open.join(' · ')}. If this message answers any, put their numbers in \`answered\` (with that \`title\`); don't ask them again.`
 }
 
 /** The open actions, numbered as the Do tab numbers them (ticked ones keep their number). */
@@ -273,8 +224,8 @@ export const boxNote = (list: readonly StepSet[]) => {
     const lines = openActionLines(s)
     return lines.length > 0 ? [`Open actions in "${s.title}": ${lines.join(' · ')}.`] : []
   })
-  const tick = todo.length > 0 ? ` ${todo.join(' ')} When the conversation shows one is finished (the user said so, ran it, or a tool result shows its outcome), tick it: call ${TOOL_ID} with that \`title\` and \`done\` listing its number.` : ''
-  return `[Action Items] The box holds: ${open.map(s => `"${s.title}" (${countText(s)})`).join(', ')}.${tick} If this turn changes what you need from the user, call ${TOOL_ID} again with what is new: unfinished asks stay by themselves.`
+  const tick = todo.length > 0 ? ` ${todo.join(' ')} Finished: \`done\`; out of date: \`remove\` (numbers, with that \`title\`).` : ''
+  return `[Action Items] ${open.map(s => `"${s.title}" (${countText(s)})`).join(', ')}.${tick}`
 }
 
 /** Actions Claude saw finished, by their number in the Do tab (1 = the first action). */
@@ -286,6 +237,19 @@ export const tickDone = (set: StepSet, numbers: readonly number[]): StepSet => {
     return numbers.includes(n) && !it.isDone ? { ...it, isDone: true } : it
   })
   return { ...set, items }
+}
+
+/** Actions Claude saw are out of date (a newer step replaces them), by their number in the Do tab: dropped, not ticked. */
+export const removeActions = (set: StepSet, numbers: readonly number[]): StepSet => {
+  let n = 0
+  return {
+    ...set,
+    items: set.items.filter(it => {
+      if (it.kind !== 'do') return true
+      n += 1
+      return !numbers.includes(n)
+    }),
+  }
 }
 
 const squash = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -360,36 +324,27 @@ export const countText = (set: StepSet) => {
 }
 
 /**
- * How far the Do tab shrinks to fit, least first: 0 draws it whole; 1 drops the blank lines and folds
- * ticked actions into one line; 3, the last resort, keeps the check and the command on the next open
- * action only, the rest one row each.
+ * How the Do tab fits: 0 puts a blank line between steps; 1 drops them. Ticked steps always fold
+ * into one line and commands always show in full.
  */
-export type DoLevel = 0 | 1 | 3
+export type DoLevel = 0 | 1
 const DO_CHROME = 5 // border, header, tabs and the gap under them
 
-/** Rows the Do tab takes at `level`, text wrapped at `columns`, under an intro of `intro`. */
-export const doRows = (list: readonly Action[], columns: number, level: DoLevel, intro = '') => {
+/** Rows the Do tab takes at `level`, text wrapped at `columns`. Earlier steps are counted as if listed. */
+export const doRows = (list: readonly Action[], columns: number, level: DoLevel) => {
   const width = Math.max(20, columns - 8)
-  const lines = (t: string) => Math.max(1, Math.ceil(t.length / width))
+  const lines = (t: string) => t.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / width)), 0)
   const open = list.filter(a => !a.isDone)
-  const shown = level === 0 ? list : open
-  const next = open[0]
-  let rows = DO_CHROME + (intro ? lines(intro) + 1 : 0) + (level > 0 && open.length < list.length ? 1 : 0) + (open.some(a => a.isEarlier) ? 1 : 0)
-  shown.forEach((a, i) => {
+  let rows = DO_CHROME + (open.length < list.length ? 1 : 0) + (open.some(a => a.isEarlier) ? 1 : 0)
+  open.forEach((a, i) => {
     rows += (level === 0 && i > 0 ? 1 : 0) + lines(a.text)
-    if (a.isDone) return
-    if (a.warning) rows += lines(`WARNING: ${a.warning}`)
-    if (a.caution) rows += lines(`CAUTION: ${a.caution}`)
-    const isWhole = level < 3 || a === next
-    if (a.check && isWhole) rows += lines(a.check)
-    if (a.command && isWhole) rows += lines(a.command)
+    if (a.command) rows += lines(a.command)
   })
   return rows
 }
 
-/** The least shrinking that fits `maxRows`; the last level when none does. */
-export const doLevel = (list: readonly Action[], columns: number, maxRows: number, intro = ''): DoLevel =>
-  ([0, 1] as const).find(l => doRows(list, columns, l, intro) <= maxRows) ?? 3
+/** Whole when it fits `maxRows`, else compact. */
+export const doLevel = (list: readonly Action[], columns: number, maxRows: number): DoLevel => (doRows(list, columns, 0) <= maxRows ? 0 : 1)
 
 // Conversations whose box is kept; the oldest is dropped past this.
 const KEEP_SESSIONS = 20
@@ -441,10 +396,6 @@ async function show($: EngineInterface, set: StepSet) {
 export const nextSet = (list: readonly StepSet[]) => list.find(isOpen)
 export const shownSet = (list: readonly StepSet[], id: string | null) => (id === null ? undefined : nextSet(list))
 
-/** The line a folded action shows of its command: the first that runs, past blank lines and comments. */
-export const commandPreview = (command: string) =>
-  command.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#') && !l.startsWith('//') && !/^rem\b/i.test(l)) ?? command.split('\n')[0]!
-
 /**
  * Everything in the box marked done: actions ticked, waiting questions closed without an answer going
  * to Claude. The box closes; the next call from Claude starts fresh, since finished asks drop off.
@@ -492,6 +443,18 @@ async function typeOwn($: EngineInterface, set: StepSet, index: number, question
   await settle($, set.id)
 }
 
+// A question's info: the side pane when the surface can place one, else a small box under the question.
+async function openInfoFor($: EngineInterface, set: StepSet, index: number) {
+  await update($, infoFor, () => `${set.id}:${index}`)
+  const opened = await $.ui.open({ id: INFO_PANE, title: 'Question info', closeOnEscape: true })
+  await update($, infoInPane, () => opened.isPlaced)
+}
+
+async function closeInfo($: EngineInterface) {
+  await update($, infoFor, () => null)
+  if (await read($, infoInPane)) await $.ui.close({ id: INFO_PANE })
+}
+
 type Surface = Parameters<EngineInterface['ui']['resolve']>[0]
 
 function chip($: EngineInterface, e: Surface, key: string, label: string, onPress: (press: { surface: Surface['surface'] }) => unknown) {
@@ -503,7 +466,10 @@ function chip($: EngineInterface, e: Surface, key: string, label: string, onPres
   )
 }
 
-// "▸ info" after a question: opens its context beneath, and closes it again.
+/** A choice's button label: Claude gives the one it recommends first, so that one says so. */
+export const optionLabel = (option: string, index: number, count: number) => (index === 0 && count > 1 ? `${option} (recommended)` : option)
+
+// "▸ info" after a question: opens its context in the side pane, and closes it again.
 function infoButton($: EngineInterface, e: Surface, key: string, isOpen: boolean, onPress: () => unknown) {
   const { Box, Button } = $.ui.resolve(e)
   return (
@@ -523,19 +489,39 @@ function dropButton($: EngineInterface, e: Surface, key: string, onPress: () => 
   )
 }
 
-// The line between new asks and what is still unfinished from before.
-function earlierLine($: EngineInterface, e: Surface, key: string) {
-  const { Box, Text } = $.ui.resolve(e)
+// The line between new asks and what is still unfinished from before; folded, it stands for them.
+function earlierLine($: EngineInterface, e: Surface, key: string, count: number, isOpen: boolean) {
+  const { Box, Button } = $.ui.resolve(e)
   return (
     <Box key={key}>
-      <Text dimColor>{'── Earlier ──'}</Text>
+      <Button
+        key={`${key}-toggle`}
+        plain
+        dimColor
+        label={isOpen ? '── Earlier ▾' : `── ${count} earlier ▸`}
+        hover={{ bold: true }}
+        onPress={() => update($, showEarlier, v => !v)}
+      />
     </Box>
   )
 }
 
+/**
+ * Asks carried over from before fold behind one "N earlier ▸" line while there is anything new to show;
+ * with nothing new, they show as they are. Returns the asks to draw and the line to draw where they start.
+ */
+export function withEarlier<T extends { it: Item }>(items: readonly T[], isOpen: boolean) {
+  const earlier = items.filter(x => x.it.isEarlier)
+  const fresh = items.filter(x => !x.it.isEarlier)
+  if (earlier.length === 0 || fresh.length === 0) return { items: [...items], line: undefined }
+  return { items: isOpen ? [...fresh, ...earlier] : fresh, line: { count: earlier.length, isOpen } }
+}
+
 // "1  Which region?" with its options as buttons beneath; once answered, the pick in green.
-// Its context line waits behind "▸ info".
-function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision, index: number, n: number, isSpaced: boolean, isFull: boolean, isInfo: boolean, onInfo: () => unknown, onDrop?: () => unknown) {
+// Its context waits behind "▸ info": in the side pane, or a small box under it where no pane fits.
+type InfoShown = { isOpen: boolean; inBox: boolean }
+
+function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision, index: number, n: number, isSpaced: boolean, isFull: boolean, info: InfoShown, onInfo: () => unknown, onDrop?: () => unknown) {
   const { Box, Text } = $.ui.resolve(e)
   const key = `${set.id}-${index}`
   const pending = isPending(set, d)
@@ -548,18 +534,18 @@ function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision,
         <Box flexShrink={1}>
           <Text bold={pending && isFull} dimColor={!pending || !isFull}>{d.text}</Text>
         </Box>
-        {isFull && pending && d.detail && infoButton($, e, `dinfo-${key}`, isInfo, onInfo)}
+        {isFull && pending && d.detail && infoButton($, e, `dinfo-${key}`, info.isOpen, onInfo)}
         {onDrop && pending && dropButton($, e, `ddrop-${key}`, onDrop)}
       </Box>
-      {isFull && pending && d.detail && isInfo && (
-        <Box marginLeft={4}>
-          <Text dimColor>{d.detail}</Text>
+      {isFull && pending && d.detail && info.isOpen && info.inBox && (
+        <Box key={`dbox-${key}`} marginLeft={4} borderStyle="round" borderColor={C.done} paddingX={1}>
+          <Text>{d.detail}</Text>
         </Box>
       )}
       {isFull && pending && !d.isTyping && (
         <Box flexDirection="row" flexWrap="wrap" marginLeft={4}>
           {d.options.map((o, oi) =>
-            chip($, e, `pick-${key}-${oi}`, o, async () => {
+            chip($, e, `pick-${key}-${oi}`, optionLabel(o, oi, d.options.length), async () => {
               await save($, l => pick(l, set.id, index, o))
               await settle($, set.id)
             }),
@@ -581,32 +567,12 @@ function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision,
   )
 }
 
-// "3  Sign in to Azure", the number ticking it off, then its "Make sure that" check and the command
-// with Copy, as an STE procedure step. The reason is said once, in the list's intro.
-type Show = { command: boolean }
-
-function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, index: number, n: number, isSpaced: boolean, show: Show, onOpen?: () => unknown, onClose?: () => unknown, onDrop?: () => unknown) {
+// "3  Sign in to Azure", the number ticking it off, then its command in full with Copy.
+function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, index: number, n: number, isSpaced: boolean, onDrop?: () => unknown) {
   const { Box, Text, Button } = $.ui.resolve(e)
   const key = `${set.id}-${index}`
   return (
     <Box key={`a-${key}`} flexDirection="column" marginTop={isSpaced ? 1 : 0}>
-      {/* STE puts a safety notice before its step, and it never hides behind info. */}
-      {!a.isDone && a.warning && (
-        <Box key={`warn-${key}`} marginLeft={4}>
-          <Text>
-            <Text bold color={C.warning}>{'WARNING: '}</Text>
-            <Text>{a.warning}</Text>
-          </Text>
-        </Box>
-      )}
-      {!a.isDone && a.caution && (
-        <Box key={`caution-${key}`} marginLeft={4}>
-          <Text>
-            <Text bold color={C.title}>{'CAUTION: '}</Text>
-            <Text>{a.caution}</Text>
-          </Text>
-        </Box>
-      )}
       <Box flexDirection="row">
         <Box width={4} flexShrink={0}>
           <Button
@@ -617,47 +583,18 @@ function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, ind
             onPress={() => save($, l => toggleAction(l, set.id, index))}
           />
         </Box>
-        {/* The text takes only its own width, so info (and a folded row's Copy) sits right after it, not out at the box's edge. */}
         <Box flexShrink={1}>
-          {/* Not shown in full: its title opens it, folding the one open before. */}
-          {onClose && !a.isDone ? (
-            <Button key={`close-${key}`} plain label={`▾ ${a.text}`} hover={{ bold: true, underline: true }} onPress={onClose} />
-          ) : onOpen && !a.isDone ? (
-            <Box flexShrink={0}>
-              <Button key={`open-${key}`} plain label={`▸ ${a.text}`} hover={{ bold: true, underline: true }} onPress={onOpen} />
-            </Box>
-          ) : (
-            <Text bold={!a.isDone} dimColor={a.isDone} strikethrough={a.isDone} color={a.isDone ? C.done : undefined}>
-              {a.text}
-            </Text>
-          )}
+          <Text bold={!a.isDone} dimColor={a.isDone} strikethrough={a.isDone} color={a.isDone ? C.done : undefined}>
+            {a.text}
+          </Text>
         </Box>
         {onDrop && dropButton($, e, `drop-${key}`, onDrop)}
-        {/* Folded, its command rides on the same row, cut to fit, with Copy after it. */}
-        {!show.command && a.command && !a.isDone && (
-          <Box flexShrink={1} marginLeft={2} backgroundColor={C.code} paddingX={1}>
-            <Text color={C.do} wrap="truncate-end">{commandPreview(a.command)}</Text>
-          </Box>
-        )}
-        {!show.command && a.command && !a.isDone && (
-          <Box flexShrink={0} marginLeft={1}>
-            {chip($, e, `copy-${key}`, 'Copy', async press => {
-              const copied = await $.ui.copy({ text: a.command!, surface: press.surface })
-              $.ui.toast(copied.isCopied ? 'Command copied' : 'Could not copy the command')
-            })}
-          </Box>
-        )}
       </Box>
-      {/* STE puts the expected result under its step: "Make sure that ...". */}
-      {show.command && a.check && !a.isDone && (
-        <Box key={`check-${key}`} marginLeft={4}>
-          <Text dimColor>{a.check}</Text>
-        </Box>
-      )}
-      {show.command && a.command && !a.isDone && (
+      {/* The command always shows whole, wrapped, never cut at the box's edge. */}
+      {a.command && !a.isDone && (
         <Box flexDirection="row" marginLeft={4}>
           <Box flexShrink={1} backgroundColor={C.code} paddingX={1}>
-            <Text color={C.do}>{a.command}</Text>
+            <Text color={C.do} wrap="wrap">{a.command}</Text>
           </Box>
           <Box flexShrink={0} marginLeft={1}>
             {chip($, e, `copy-${key}`, 'Copy', async press => {
@@ -681,7 +618,6 @@ export const register: Register = on => {
         type: 'object',
         properties: {
           title: { type: 'string', description: 'The task this is about, a few words.' },
-          intro: { type: 'string', description: 'STE intro for the actions: 1 to 3 short sentences on what they do and what the user needs first. The reason goes here once, not on each step.' },
           decisions: {
             type: 'array',
             description: 'Questions the user answers.',
@@ -705,17 +641,19 @@ export const register: Register = on => {
             items: { type: 'number' },
             description: "Open actions the conversation shows are finished: their numbers in the box, with that set's title. Can go with new decisions and actions in the same call.",
           },
+          remove: {
+            type: 'array',
+            items: { type: 'number' },
+            description: "Open actions that are out of date (not done, but replaced by a newer step or no longer needed): their numbers in the box, with that set's title. They are dropped, not ticked.",
+          },
           actions: {
             type: 'array',
             description: 'Things the user does themselves.',
             items: {
               type: 'object',
               properties: {
-                text: { type: 'string', description: 'One step as a command, in Simplified Technical English, 20 words or fewer.' },
-                check: { type: 'string', description: 'Only when the result matters: one sentence that starts with "Make sure that".' },
+                text: { type: 'string', description: 'One short, high-level step in plain words, about 8 words.' },
                 command: { type: 'string', description: 'The exact command to run for this action, if any.' },
-                caution: { type: 'string', description: 'STE CAUTION, shown before the step: a risk to data, a service or access. Command or condition first, then the risk.' },
-                warning: { type: 'string', description: 'STE WARNING, shown before the step: a risk to people. Command or condition first, then the risk.' },
               },
               required: ['text'],
             },
@@ -821,17 +759,18 @@ export const register: Register = on => {
     const input = e as unknown as Record<string, unknown>
     if (e.agentId === undefined) boxUsed = true
     const hasAsks = Array.isArray(input.decisions) || Array.isArray(input.actions) || Array.isArray(input.steps)
-    // Questions answered in chat and actions seen finished, cleared first so an update in the same call keeps them.
-    if (Array.isArray(input.answered) || Array.isArray(input.done)) {
+    // Questions answered in chat, actions seen finished and actions out of date, cleared first so an update in the
+    // same call keeps them. Ticking happens before removing, so both use the numbers the box shows now.
+    if (Array.isArray(input.answered) || Array.isArray(input.done) || Array.isArray(input.remove)) {
       const numbers = (v: unknown) => (Array.isArray(v) ? v.filter((n): n is number => typeof n === 'number') : [])
       const title = str(input.title)
       const list = await read($, sets)
       const target = list.find(s => s.title === title) ?? list[0]
       if (!target && !hasAsks) return { result: 'Not saved: no set with that title in the box.', isError: true }
       if (target) {
-        const next = tickDone(markAnswered(target, numbers(input.answered)), numbers(input.done))
-        await save($, l => l.map(s => (s.id === target.id ? next : s)))
-        if (!hasAsks) return { result: `Cleared from the box. Left in it: ${countText(next)}.` }
+        const next = removeActions(tickDone(markAnswered(target, numbers(input.answered)), numbers(input.done)), numbers(input.remove))
+        await save($, l => l.map(s => (s.id === target.id ? next : s)).filter(s => s.items.length > 0))
+        if (!hasAsks) return { result: `Cleared from the box. Left in it: ${next.items.length > 0 ? countText(next) : 'nothing from that set'}.` }
       }
     }
     const now = await $.clock.now()
@@ -860,9 +799,8 @@ export const register: Register = on => {
         <Box flexDirection="column">
           <Box key="action-items-folded" flexDirection="row" justifyContent="space-between" borderStyle="round" borderColor={C.frame} paddingX={1}>
             <Text>
-              <Text bold color={C.title}>{'⚑ CLAUDE NEEDS YOU'}</Text>
-              <Text dimColor>{'  ·  '}</Text>
-              <Text>{`${set.title} · ${countText(set)}`}</Text>
+              <Text bold color={C.title}>{`⚑ ${set.title}`}</Text>
+              <Text dimColor>{`  ·  ${countText(set)}`}</Text>
             </Text>
             <Text dimColor>{'/action-items ▸'}</Text>
           </Box>
@@ -892,17 +830,16 @@ export const register: Register = on => {
     // the rest wait one line each.
     const answered = decide.filter(x => !isPending(set, x.it))
     const waiting = decide.filter(x => isPending(set, x.it))
-    const focus = waiting.find(x => !x.it.isTyping)?.i
+    const isEarlierShown = await read($, showEarlier)
+    const decideList = withEarlier(waiting.length > 0 ? waiting : answered, isEarlierShown)
+    // The first new question opens; an earlier one only when nothing new waits.
+    const focus = decideList.items.find(x => isPending(set, x.it) && !x.it.isTyping)?.i
     const drop = (i: number) => () => save($, l => dropItem(l, set.id, i))
-    // The question waiting first shows its context by itself; "x:" marks one closed by hand.
-    const openInfo = await read($, info)
-    const infoKey = (i: number) => `d:${set.id}:${i}`
-    const isInfo = (i: number) => !openInfo.includes(`x:${infoKey(i)}`) && (openInfo.includes(infoKey(i)) || i === focus)
-    const toggleInfo = (i: number) => () => {
-      const k = infoKey(i)
-      const isShown = isInfo(i)
-      return update($, info, v => [...v.filter(x => x !== k && x !== `x:${k}`), isShown ? `x:${k}` : k])
-    }
+    // A question's context opens only when asked, in the side pane (else a small box under it).
+    const openInfo = await read($, infoFor)
+    const isInPane = await read($, infoInPane)
+    const infoShown = (i: number): InfoShown => ({ isOpen: openInfo === `${set.id}:${i}`, inBox: !isInPane })
+    const toggleInfo = (i: number) => () => (openInfo === `${set.id}:${i}` ? closeInfo($) : openInfoFor($, set, i))
     const decidePart = (
       <Box key="decide-part" flexDirection="column">
         {answered.length > 0 && waiting.length > 0 && (
@@ -910,39 +847,27 @@ export const register: Register = on => {
             <Text color={C.done} dimColor>{`✓   ${answered.length} answered`}</Text>
           </Box>
         )}
-        {(waiting.length > 0 ? waiting : answered).flatMap((x, n, all) => [
-          ...(x.it.isEarlier && !all[n - 1]?.it.isEarlier ? [earlierLine($, e, 'earlier-decide')] : []),
-          decisionLine($, e, set, x.it, x.i, decide.indexOf(x) + 1, false, x.i === focus, isInfo(x.i), toggleInfo(x.i), x.it.isEarlier ? drop(x.i) : undefined),
+        {decideList.items.flatMap((x, n, all) => [
+          ...(decideList.line && x.it.isEarlier && !all[n - 1]?.it.isEarlier ? [earlierLine($, e, 'earlier-decide', decideList.line.count, true)] : []),
+          decisionLine($, e, set, x.it, x.i, decide.indexOf(x) + 1, false, x.i === focus, infoShown(x.i), toggleInfo(x.i), x.it.isEarlier ? drop(x.i) : undefined),
         ])}
+        {decideList.line && !decideList.line.isOpen && earlierLine($, e, 'earlier-decide', decideList.line.count, false)}
       </Box>
     )
 
-    // Do: drawn whole when it fits; else ticked ones fold and only the next open action keeps
-    // its check and command.
+    // Do: ticked ones fold into a line; blank lines between steps while it fits.
     // Three rows stay free for Bare View's finished checklist, folded to one line beside it.
-    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3, set.intro)
-    const nextOpen = doing.find(x => !x.it.isDone)?.i
+    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3)
     const isDoneShown = await read($, showDone)
-    const shown = level === 0 || isDoneShown ? doing : doing.filter(x => !x.it.isDone)
-    const doneCount = doing.filter(x => x.it.isDone).length
-    // The opened action shows in full: the one picked by its title, else the next open one;
-    // "<set>:none" when the person folded it.
-    const focusKey = await read($, openAction)
-    const opened =
-      focusKey === `${set.id}:none` ? undefined : (doing.find(x => `${set.id}:${x.i}` === focusKey && !x.it.isDone)?.i ?? nextOpen)
-    const showFor = (i: number): Show => ({ command: level < 3 || i === opened })
-    // Folded means its command is tucked away; with no command there is nothing to open.
-    const isWhole = (sh: Show, a: Action) => sh.command || (!a.command && !a.check)
+    const open = doing.filter(x => !x.it.isDone)
+    const doList = withEarlier(open, isEarlierShown)
+    const shown = isDoneShown ? [...doing.filter(x => x.it.isDone), ...doList.items] : doList.items
+    const doneCount = doing.length - open.length
+    const openCommands = doList.items.filter(x => x.it.command).map(x => x.it.command!)
     const doPart = (
       <Box key="do-part" flexDirection="column">
-        {/* An STE procedure opens with what it does and what you need, said once for every step. */}
-        {set.intro && (
-          <Box key="intro" marginBottom={1}>
-            <Text>{set.intro}</Text>
-          </Box>
-        )}
         {/* Ticked ones fold into a line that lists them again, so one can be unticked. */}
-        {level > 0 && doneCount > 0 && (
+        {doneCount > 0 && (
           <Box key="done-folded">
             <Button
               key="toggle-done"
@@ -955,13 +880,11 @@ export const register: Register = on => {
           </Box>
         )}
         {shown.flatMap((x, n) => {
-          const sh = showFor(x.i)
-          const divider = x.it.isEarlier && !x.it.isDone && !shown.slice(0, n).some(y => y.it.isEarlier && !y.it.isDone) ? [earlierLine($, e, 'earlier-do')] : []
-          const open = isWhole(sh, x.it) ? undefined : () => update($, openAction, () => `${set.id}:${x.i}`)
-          // In a short box the opened one folds back from its title too.
-          const close = level > 0 && x.i === opened && x.it.command ? () => update($, openAction, () => `${set.id}:none`) : undefined
-          return [...divider, actionLine($, e, set, x.it, x.i, doing.indexOf(x) + 1, level === 0 && n > 0 && divider.length === 0, sh, open, close, x.it.isEarlier ? drop(x.i) : undefined)]
+          const isFirstEarlier = doList.line && x.it.isEarlier && !x.it.isDone && !shown.slice(0, n).some(y => y.it.isEarlier && !y.it.isDone)
+          const divider = isFirstEarlier ? [earlierLine($, e, 'earlier-do', doList.line!.count, true)] : []
+          return [...divider, actionLine($, e, set, x.it, x.i, doing.indexOf(x) + 1, level === 0 && n > 0 && divider.length === 0, x.it.isEarlier ? drop(x.i) : undefined)]
         })}
+        {doList.line && !doList.line.isOpen && earlierLine($, e, 'earlier-do', doList.line.count, false)}
       </Box>
     )
 
@@ -970,27 +893,88 @@ export const register: Register = on => {
         <Box key="action-items-band" flexDirection="column" borderStyle="round" borderColor={C.frame} paddingX={1}>
           <Box key="band-header" flexDirection="row" justifyContent="space-between">
             <Text>
-              <Text bold color={C.title}>{'⚑ CLAUDE NEEDS YOU'}</Text>
-              <Text dimColor>{'  ·  '}</Text>
-              <Text bold>{set.title}</Text>
+              <Text bold color={C.title}>{`⚑ ${set.title}`}</Text>
+              <Text dimColor>{`  ·  ${countText(set)}`}</Text>
             </Text>
             <Box key="band-buttons" flexDirection="row" flexShrink={0}>
-              {/* Clear drops this set for good, so the box moves on instead of coming back to it. */}
-              <Box key="done-all-box" marginRight={2}>
-                <Button key="done-all" plain dimColor label="Mark as done" hover={{ bold: true }} onPress={() => markDone($)} />
-              </Box>
-              <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
+              {/* Every open command at once, one per line, for pasting into a terminal. */}
+              {current === 'do' && openCommands.length > 1 && (
+                <Box key="copy-all-box" marginRight={2}>
+                  <Button
+                    key="copy-all"
+                    plain
+                    dimColor
+                    label="Copy all"
+                    hover={{ bold: true }}
+                    onPress={async press => {
+                      const copied = await $.ui.copy({ text: openCommands.join('\n'), surface: press.surface })
+                      $.ui.toast(copied.isCopied ? `${openCommands.length} commands copied` : 'Could not copy the commands')
+                    }}
+                  />
+                </Box>
+              )}
+              {/* The one way out of the box: everything in it marked done. /action-items hide only hides it. */}
+              <Button key="done-all" plain dimColor label="Mark as done" hover={{ bold: true }} onPress={() => markDone($)} />
             </Box>
           </Box>
-          <Box key="tabs" flexDirection="row" marginBottom={1}>
-            {decide.length > 0 && tabChip('decide', '?', 'Decide', C.decide, waiting.length)}
-            {doing.length > 0 && tabChip('do', '▶', 'Do', C.do, doing.length - doing.filter(x => x.it.isDone).length)}
-          </Box>
+          {/* Tabs only when there are both kinds to switch between. */}
+          {decide.length > 0 && doing.length > 0 ? (
+            <Box key="tabs" flexDirection="row" marginBottom={1}>
+              {tabChip('decide', '?', 'Decide', C.decide, waiting.length)}
+              {tabChip('do', '▶', 'Do', C.do, doing.length - doing.filter(x => x.it.isDone).length)}
+            </Box>
+          ) : (
+            <Box key="no-tabs" marginBottom={1} />
+          )}
           {current === 'decide' ? decidePart : doPart}
         </Box>
         {below}
       </Box>
     )
+  })
+
+  // The side pane: the question, its context, and its choices, the recommended one marked.
+  on('ui.render', { component: 'Pane', requestId: INFO_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const [id, index] = ((await read($, infoFor)) ?? '').split(':')
+    const set = (await read($, sets)).find(s => s.id === id)
+    const d = set?.items[Number(index)]
+    if (!set || !d || d.kind !== 'decide') {
+      return (
+        <Box>
+          <Text dimColor>No question selected.</Text>
+        </Box>
+      )
+    }
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        <Text bold>{d.text}</Text>
+        {d.detail && (
+          <Box key="info-detail" marginTop={1}>
+            <Text>{d.detail}</Text>
+          </Box>
+        )}
+        {d.options.length > 0 && (
+          <Box key="info-options" flexDirection="column" marginTop={1}>
+            {d.options.map((o, oi) => (
+              <Text key={`info-option-${oi}`}>{`• ${optionLabel(o, oi, d.options.length)}`}</Text>
+            ))}
+          </Box>
+        )}
+        <Box key="info-close-box" marginTop={1}>
+          <Button key="info-close" plain dimColor label="Close" hover={{ bold: true }} onPress={() => closeInfo($)} />
+        </Box>
+      </Box>
+    )
+  })
+
+  // Closed by the person (its close mark or Escape): the question's info button reads closed again.
+  on('ui.close', async ($, e, next) => {
+    if (e.id === INFO_PANE) {
+      await update($, infoFor, () => null)
+      await update($, infoInPane, () => false)
+    }
+    return next(e)
   })
 
   on('command.run', { command: COMMAND }, async ($, e) => {

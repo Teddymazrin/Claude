@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { StepSet } from '../types'
-import { addSet, markAllDone, boxNote, dropItem, flatten, steProblems, steWords, commandPreview, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction, openActions, ranAction, replyAsk, tickDone, tickRan } from './register'
+import { withEarlier, addSet, markAllDone, boxNote, dropItem, flatten, staleKeys, storeKey, answerText, applyTyped, clearSet, markAnswered, countText, doLevel, doRows, isDecided, isOpen, parseSet, pick, REMINDER, withReminder, startTyping, toggleAction, openActions, ranAction, replyAsk, tickDone, tickRan } from './register'
 
 const parsed = (input: Record<string, unknown>) => {
   const set = parseSet(input, '1', 1_000)
@@ -18,8 +18,9 @@ test('parses decisions and actions, decisions first', () => {
   })
   expect(set.items[0]).toEqual({ kind: 'decide', text: 'Which region?', detail: 'Closest to users', options: ['eastus', 'westeurope'] })
   expect(set.items[1]).toEqual({ kind: 'do', text: 'Sign in to Azure', command: 'Connect-AzAccount', isDone: false })
-  expect(set.items[2]).toEqual({ kind: 'do', text: 'Run the deploy script', check: 'Make sure that the output shows 3 rows.', isDone: false })
-  expect(set.intro).toBe('These steps deploy the app. You must have Owner access.')
+  // Only the step and its command are kept: an intro and checks from older callers are dropped.
+  expect(set.items[2]).toEqual({ kind: 'do', text: 'Run the deploy script', isDone: false })
+  expect(set.intro).toBeUndefined()
 })
 
 test('takes the older `steps` as actions; rejects empty or broken sets', () => {
@@ -27,10 +28,8 @@ test('takes the older `steps` as actions; rejects empty or broken sets', () => {
   expect(parseSet({ actions: [{ text: 'a' }] }, '1', 0)).toContain('title')
   expect(parseSet({ title: 't' }, '1', 0)).toContain('at least one')
   expect(parseSet({ title: 't', actions: [{ command: 'x' }] }, '1', 0)).toContain('text')
-  // A check starts with "Make sure that"; an intro is 3 sentences at most, in STE.
-  expect(parseSet({ title: 't', actions: [{ text: 'Run it', check: 'The output shows 3 rows.' }] }, '1', 0)).toContain('must start with "Make sure that"')
-  expect(parseSet({ title: 't', intro: 'One. Two. Three. Four.', actions: [{ text: 'Run it' }] }, '1', 0)).toContain('more than 3 sentences')
-  expect(parseSet({ title: 't', intro: "It's ready", actions: [{ text: 'Run it' }] }, '1', 0)).toContain('`intro` is not in Simplified Technical English')
+  // Plain words are fine: no style rules reject a step.
+  expect(typeof parseSet({ title: 't', actions: [{ text: "Check it's done; then restart" }] }, '1', 0)).toBe('object')
   expect(parseSet({ title: 't', decisions: [{ options: ['a'] }] }, '1', 0)).toContain('question')
 })
 
@@ -115,18 +114,16 @@ test('reminder names the tool and how to load it', () => {
   expect(REMINDER).toContain('decisions or actions')
 })
 
-test('the Do tab counts the intro, checks and commands, and shrinks to fit', () => {
-  const as = parsed({ title: 'T', actions: [1, 2, 3].map(n => ({ text: `A${n}`, check: 'Make sure that it runs.', command: 'c' })) }).items as never[]
-  // Chrome 5; each action 3 rows; 2 blank lines between.
-  expect(doRows(as, 100, 0)).toBe(16)
-  expect(doRows(as, 100, 1)).toBe(14)
-  // Check and command on the next one only: 5 + 3 + 1 + 1.
-  expect(doRows(as, 100, 3)).toBe(10)
-  // An intro takes its lines and a blank one under it.
-  expect(doRows(as, 100, 0, 'These steps deploy the app.')).toBe(18)
-  expect(doLevel(as, 100, 16)).toBe(0)
-  expect(doLevel(as, 100, 15)).toBe(1)
-  expect(doLevel(as, 100, 9)).toBe(3)
+test('the Do tab counts each step and its whole command, and drops blank lines to fit', () => {
+  const as = parsed({ title: 'T', actions: [1, 2, 3].map(n => ({ text: `A${n}`, command: 'c' })) }).items as never[]
+  // Chrome 5; each action 2 rows; 2 blank lines between.
+  expect(doRows(as, 100, 0)).toBe(13)
+  expect(doRows(as, 100, 1)).toBe(11)
+  // A long command wraps instead of being cut: 100 columns leave 92 for it.
+  const long = parsed({ title: 'T', actions: [{ text: 'A', command: 'x'.repeat(200) }] }).items as never[]
+  expect(doRows(long, 100, 0)).toBe(5 + 1 + 3)
+  expect(doLevel(as, 100, 13)).toBe(0)
+  expect(doLevel(as, 100, 12)).toBe(1)
 })
 
 test('a typed Other… answer counts; a blank one reopens the question', () => {
@@ -169,34 +166,9 @@ test('each conversation keeps its own box; the oldest past 20 and the old shared
   expect(staleKeys(['sets:a', 'sets:b'])).toEqual([])
 })
 
-test('a folded command shows its first line that runs, not a comment', () => {
-  expect(commandPreview('# All tests\npwsh -File t.ps1\n\n# More\npwsh x')).toBe('pwsh -File t.ps1')
-  expect(commandPreview('az login')).toBe('az login')
-  expect(commandPreview('# only a comment')).toBe('# only a comment')
-})
-
-test('new actions are held to Simplified Technical English, with every problem in one message', () => {
-  const bad = parseSet({ title: 'T', actions: [{ text: "Check it's done; then you should restart", check: 'Make sure that it has been fixed.', command: 'x; y' }] }, '1', 0)
-  expect(bad).toContain('not in Simplified Technical English')
-  expect(bad).toContain('a semicolon')
-  expect(bad).toContain('a contraction')
-  expect(bad).toContain('"should"')
-  expect(bad).toContain('make sure that')
-  expect(bad).toContain('`check` has the present perfect')
-  // Code, quotes and the command are left alone; a clean action passes.
-  expect(steProblems('Run `az login; az account show` and select "Don\'t ask again"', 20)).toEqual([])
-  expect(steProblems('May 5 is the date.', 25)).toEqual([])
-  expect(steWords('Run `a b c` in the "Admin center" (the portal)')).toBe(6)
-  expect(steProblems(Array.from({ length: 21 }, () => 'word').join(' '), 20)).toEqual(['a sentence over 20 words'])
-  // Two short sentences are fine; the limit is per sentence.
-  expect(steProblems(`${Array.from({ length: 15 }, () => 'word').join(' ')}. ${Array.from({ length: 15 }, () => 'word').join(' ')}.`, 20)).toEqual([])
-  // The older `steps` form is not checked.
-  expect(typeof parseSet({ title: 'T', steps: [{ text: "Check it's done" }] }, '1', 0)).toBe('object')
-})
-
-test('caution and warning are kept on the action', () => {
-  const set = parsed({ title: 'T', actions: [{ text: 'Erase the vault', why: 'Frees the space', caution: 'Do not erase the vault unless you are sure. You cannot undo this step.' }] })
-  expect(set.items[0]).toMatchObject({ caution: 'Do not erase the vault unless you are sure. You cannot undo this step.' })
+test('caution and warning from older callers are dropped', () => {
+  const set = parsed({ title: 'T', actions: [{ text: 'Erase the vault', caution: 'You cannot undo this step.', warning: 'x' }] })
+  expect(set.items[0]).toEqual({ kind: 'do', text: 'Erase the vault', isDone: false })
 })
 
 test('a command run as an action gives it ticks that action, and only that one', () => {
@@ -272,4 +244,13 @@ test('marking everything done ticks actions and closes questions without sending
   const [done] = markAllDone([set])
   expect(isOpen(done!)).toBe(false)
   expect(done!.isSent).toBe(true)
+})
+
+test('earlier asks fold behind one line only while something new shows', () => {
+  const fresh = { it: { kind: 'do', text: 'new', isDone: false } as const }
+  const old = { it: { kind: 'do', text: 'old', isDone: false, isEarlier: true } as const }
+  expect(withEarlier([fresh, old], false)).toEqual({ items: [fresh], line: { count: 1, isOpen: false } })
+  expect(withEarlier([fresh, old], true)).toEqual({ items: [fresh, old], line: { count: 1, isOpen: true } })
+  // Nothing new: the earlier ones show as they are, with no line.
+  expect(withEarlier([old], false)).toEqual({ items: [old], line: undefined })
 })

@@ -1,5 +1,24 @@
 # Action Items log
 
+## 9.0.0 (2026-10-28)
+
+**Asked for:** the box looked cluttered: CAUTION notices, "Make sure that" lines, an intro, info opening by itself, and commands cut off at the edge so you couldn't read them. ASD-STE100 was meant to keep it clean but added clutter. Wanted plain, short, high-level steps you can see at a glance.
+
+**Changed:**
+- Steps are a number, a few plain words and the full command (wrapped, never cut off) with Copy. The intro, CAUTION, WARNING and "Make sure that" lines are gone, from the box and from the tool
+- Claude no longer has to write in Simplified Technical English; the STE checks that sent calls back are removed. Claude is asked for about 8 plain words a step and short commands (a `cd` first, not long temp paths)
+- The click-to-open folding of long lists is gone; every command always shows
+- Decide / Do tabs show only when the box holds both
+- **Copy all** in the header copies every open command, one per line
+- Ticked steps always fold into "✓ N done ▸ show"; carried-over asks fold into one "── N earlier ▸" line while something new shows
+- A question's info never opens by itself. **▸ info** opens it in a side pane, or a small box under the question where no pane fits
+- The recommended option (Claude gives it first) reads "(recommended)"
+- Shorter header: `⚑ <task> · 2 to do`. The ✕ next to Mark as done is gone; `/action-items hide` still hides the box
+- Claude can `remove` steps that a newer one replaced, instead of marking them done
+- The note Claude gets with each message is one short line
+
+**Saved boxes:** steps saved by 8.1 keep their text and command; their intro, check and caution no longer show.
+
 ## 8.1.0 (2026-10-25)
 
 **Asked for:** the box sometimes doesn't come up. And it should stay current by itself: when something in it is done, it should be ticked without having to do it by hand.

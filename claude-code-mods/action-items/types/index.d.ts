@@ -17,13 +17,11 @@ export type Decision = {
 export type Action = {
   kind: 'do'
   text: string
-  /** STE's check on the result, one sentence starting "Make sure that". */
+  command?: string
+  /** Saved by 8.1 and earlier: kept on old steps, no longer shown. */
   check?: string
-  /** From 7.2 and earlier: the reason and the how-to, no longer shown. */
   why?: string
   detail?: string
-  command?: string
-  /** STE safety notices, shown before the step: risk to people, and risk to data, a service or access. */
   warning?: string
   caution?: string
   isDone: boolean
@@ -35,7 +33,7 @@ export type Item = Decision | Action
 export type StepSet = {
   id: string
   title: string
-  /** What the steps do and what you need first, said once (STE procedure intro). */
+  /** Saved by 8.1 and earlier, no longer shown. */
   intro?: string
   items: Item[]
   at: number
@@ -51,12 +49,14 @@ declare module 'claude-code' {
       band: string | null
       /** The tab the person picked; null opens Decide while a question waits, Do after. */
       tab: 'decide' | 'do' | null
-      /** The action opened in full in a short box, as "<set id>:<index>"; null opens the next one. */
-      focus: string | null
       /** Whether ticked actions folded into "✓ N done" are listed again. */
       showDone: boolean
-      /** Info opened by hand ("a:<set id>:<index>", "d:..."), or closed by hand ("x:a:...") where it opens by itself. */
-      info: string[]
+      /** Whether asks carried over from before are listed, or folded into one "N earlier" line. */
+      showEarlier: boolean
+      /** The question whose info is open, as "<set id>:<index>"; null when none. */
+      infoFor: string | null
+      /** Whether that info shows in the side pane (true) or a small box under the question. */
+      infoInPane: boolean
       /** True once a system prompt this session carries the instructions, so prompts skip the reminder. */
       composed: boolean
       /** True once /action-items opened the box mid-turn; while Claude works it folds to one line otherwise. */

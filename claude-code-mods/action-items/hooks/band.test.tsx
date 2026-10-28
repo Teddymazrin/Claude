@@ -29,17 +29,17 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
   } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
-    expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^⚑ / })).toBeDefined()
     // Opens on Decide; the Do tab shows the actions.
     expect(await ui.find({ key: 'tab-decide' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Which region\?/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /az login/ })).toBeUndefined()
     await ui.press({ key: 'tab-do' })
     expect(await ui.find({ type: 'Text', text: /az login/ })).toBeDefined()
-    // An STE procedure: the intro once, then the step, its check and its command. No info buttons.
-    expect(await ui.find({ type: 'Text', text: 'These steps deploy the app to your subscription.' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Make sure that the browser shows your work account/ })).toBeDefined()
-    expect(await ui.find({ key: 'info-5000-1' })).toBeUndefined()
+    // Just the step and its command: an older caller's intro and check don't show.
+    expect(await ui.find({ type: 'Text', text: 'These steps deploy the app to your subscription.' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Make sure that the browser shows your work account/ })).toBeUndefined()
+    expect(await ui.find({ key: 'copy-5000-1' })).toBeDefined()
     await ui.press({ key: 'tab-decide' })
     await ui.unmount()
   }
@@ -50,11 +50,11 @@ test('the box shows decisions apart from actions; a click sends the answer', asy
   expect(await ui.find({ type: 'Text', text: /az login/ })).toBeDefined()
   // Ticking the last action closes the box.
   await ui.press({ key: 'tick-5000-1' })
-  expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^⚑ / })).toBeUndefined()
   await ui.unmount()
 })
 
-test('a caution shows before its step, outside info', async ($, on) => {
+test('no CAUTION notice shows, even when an older caller sends one', async ($, on) => {
   on('clock.now', () => ({ value: 50_000 }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -67,8 +67,9 @@ test('a caution shows before its step, outside info', async ($, on) => {
   } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
-    expect(await ui.find({ type: 'Text', text: 'CAUTION: ' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /You cannot undo this step/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'CAUTION: ' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /You cannot undo this step/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /az keyvault purge/ })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -96,34 +97,30 @@ test('a typed reply keeps unanswered questions until Claude clears them', async 
   expect(String(ran.result)).toContain('1 to decide')
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Q', answered: [2] } as never)
   const after = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
-  expect(await after.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
+  expect(await after.find({ type: 'Text', text: /^⚑ / })).toBeUndefined()
   await after.unmount()
 })
 
-test('a box too short folds the other actions to one row', async ($, on) => {
+test('every command shows whole, in a tall box and a short one', async ($, on) => {
   on('clock.now', () => ({ value: 9_000 }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  const actions = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i + 1}`, check: `Make sure that step ${i + 1} works.`, command: `run-${i + 1}` }))
+  const long = 'git -C C:/Users/PC/AppData/Local/Temp/ghmove/claude-repo push --force origin fresh-main:main'
+  const actions = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i + 1}`, command: i === 5 ? long : `run-${i + 1}` }))
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Long', actions } as never)
   const tall = { ...BAND, props: { ...BAND.props, maxRows: 60, scroll: { offset: 0, bodyRows: 60 } } }
   const short = { ...BAND, props: { ...BAND.props, maxRows: 12, scroll: { offset: 0, bodyRows: 12 } } }
   for (const surface of SURFACES) {
-    // Room for all of it: every step with its check and command.
-    const full = await $.ui.mount({ plugin: 'action-items', surface, ...tall } as never)
-    expect(await full.find({ type: 'Text', text: /run-6/ })).toBeDefined()
-    expect(await full.find({ type: 'Text', text: /step 6 works/ })).toBeDefined()
-    await full.unmount()
-    // 12 rows: the next action keeps its check and command; the rest fold to one row with theirs and Copy.
-    const ui = await $.ui.mount({ plugin: 'action-items', surface, ...short } as never)
-    expect(await ui.find({ key: 'open-9000-5' })).toBeDefined()
-    expect(await ui.find({ key: 'copy-9000-5' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^run-6$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /step 1 works/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /step 6 works/ })).toBeUndefined()
-    await ui.unmount()
+    for (const size of [tall, short]) {
+      const ui = await $.ui.mount({ plugin: 'action-items', surface, ...size } as never)
+      expect(await ui.find({ type: 'Text', text: long })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^run-1$/ })).toBeDefined()
+      expect(await ui.find({ key: 'copy-9000-5' })).toBeDefined()
+      expect(await ui.find({ key: 'open-9000-5' })).toBeUndefined()
+      await ui.unmount()
+    }
   }
   // Ticking step 1 folds it into "1 done".
   const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...short } as never)
@@ -133,8 +130,14 @@ test('a box too short folds the other actions to one row', async ($, on) => {
   await ui.unmount()
 })
 
-test('one question at a time: the first waiting one opens, its context behind info', async ($, on) => {
+test('one question at a time; its context opens only on info, outside the question list', async ($, on) => {
   on('clock.now', () => ({ value: 11_000 }))
+  // Stands for a surface with no room for a pane.
+  const opened: string[] = []
+  on('ui.open', ($, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: false as const, reason: 'no-surface' as const } }
+  })
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -150,11 +153,17 @@ test('one question at a time: the first waiting one opens, its context behind in
   } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
-    // The question waiting first shows its context by itself; info folds it away and back.
-    expect(await ui.find({ type: 'Text', text: /about first/ })).toBeDefined()
-    await ui.press({ key: 'dinfo-11000-0' })
+    // Nothing opens by itself; the recommended choice says so.
     expect(await ui.find({ type: 'Text', text: /about first/ })).toBeUndefined()
+    expect(await ui.find({ key: 'pick-11000-0-0', label: 'a (recommended)' } as never)).toBeDefined()
+    // info asks for the side pane; with none placed here, it shows in a small box under the question.
     await ui.press({ key: 'dinfo-11000-0' })
+    expect(opened.at(-1)).toBe('action-items-info')
+    expect(await ui.find({ key: 'dbox-11000-0' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /about first/ })).toBeDefined()
+    // Pressed again, it closes.
+    await ui.press({ key: 'dinfo-11000-0' })
+    expect(await ui.find({ key: 'dbox-11000-0' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /Second\?/ })).toBeDefined()
     // Waiting its turn, the second shows neither its info button nor its options.
     expect(await ui.find({ key: 'dinfo-11000-1' })).toBeUndefined()
@@ -165,7 +174,7 @@ test('one question at a time: the first waiting one opens, its context behind in
   await ui.press({ key: 'pick-11000-0-1' })
   expect(await ui.find({ type: 'Text', text: /1 answered/ })).toBeDefined()
   expect(await ui.find({ key: 'dinfo-11000-1' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /about second/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /about second/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -181,48 +190,43 @@ test('new asks go on top; unfinished ones from before stay under Earlier until t
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Newer', actions: [{ text: 'Run the new step', why: 'w' }] } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
-    expect(await ui.find({ type: 'Text', text: 'Newer' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '⚑ Newer' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Run the new step/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '── Earlier ──' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Old step/ })).toBeDefined()
-    // No arrows, no stacked sets.
+    // Carried steps fold behind one line while something new shows.
+    expect(await ui.find({ key: 'earlier-do-toggle' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Old step/ })).toBeUndefined()
+    // No arrows, no stacked sets, no ✕ beside Mark as done.
     expect(await ui.find({ key: 'nav-older' })).toBeUndefined()
+    expect(await ui.find({ key: 'band-close' })).toBeUndefined()
     expect(await ui.find({ key: 'tick-21000-0' })).toBeDefined()
-    // The new ask has no ✕; a carried one does.
-    expect(await ui.find({ key: 'drop-21000-0' })).toBeUndefined()
-    expect(await ui.find({ key: 'drop-21000-1' })).toBeDefined()
     await ui.unmount()
   }
   const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
+  // Opened, they list under an Earlier line; the new ask has no ✕, a carried one does.
+  await ui.press({ key: 'earlier-do-toggle' })
+  expect(await ui.find({ type: 'Text', text: /Old step/ })).toBeDefined()
+  expect(await ui.find({ key: 'drop-21000-0' })).toBeUndefined()
+  expect(await ui.find({ key: 'drop-21000-1' })).toBeDefined()
   await ui.press({ key: 'drop-21000-1' })
   expect(await ui.find({ type: 'Text', text: /^Old step$/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /Other old step/ })).toBeDefined()
   // Ticking the rest closes the box.
   await ui.press({ key: 'tick-21000-0' })
   await ui.press({ key: 'tick-21000-1' })
-  expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^⚑ / })).toBeUndefined()
   await ui.unmount()
 })
 
-test('in a short box, clicking a folded action opens it in full', async ($, on) => {
+test('in a short box, a ticked action folds away and can be listed again to untick', async ($, on) => {
   on('clock.now', () => ({ value: 60_000 }))
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  const actions = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i + 1}`, why: `Why ${i + 1}`, detail: `How to do step ${i + 1}`, command: `run-${i + 1}` }))
+  const actions = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i + 1}`, command: `run-${i + 1}` }))
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Long', actions } as never)
   const short = { ...BAND, props: { ...BAND.props, maxRows: 12, scroll: { offset: 0, bodyRows: 12 } } }
   const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...short } as never)
-  expect(await ui.find({ key: 'close-60000-0' })).toBeDefined()
-  await ui.press({ key: 'open-60000-3' })
-  expect(await ui.find({ key: 'close-60000-3' })).toBeDefined()
-  // The one open before folds back.
-  expect(await ui.find({ key: 'open-60000-0' })).toBeDefined()
-  // Its title folds it again.
-  await ui.press({ key: 'close-60000-3' })
-  expect(await ui.find({ key: 'open-60000-3' })).toBeDefined()
-  // A ticked one can be listed again and unticked.
   await ui.press({ key: 'tick-60000-0' })
   expect(await ui.find({ key: 'tick-60000-0' })).toBeUndefined()
   await ui.press({ key: 'toggle-done' })
@@ -244,7 +248,7 @@ test('Mark as done ticks everything off and closes the box', async ($, on) => {
   const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
   expect(await ui.find({ key: 'clear' })).toBeUndefined()
   await ui.press({ key: 'done-all' })
-  expect(await ui.find({ type: 'Text', text: /CLAUDE NEEDS YOU/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^⚑ / })).toBeUndefined()
   await ui.unmount()
   expect(await $.command.run({ command: 'action-items' } as never)).toEqual({ text: 'Nothing open: Claude needs nothing from you right now.' })
 })
@@ -272,7 +276,8 @@ test('while Claude works the box folds to one line; /action-items opens it until
   await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Ship', decisions: [{ question: 'Merge now?', options: ['Yes', 'Wait'] }] } as never)
   const WORKING = { ...BAND, props: { ...BAND.props, isWorking: true } }
   let ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...WORKING } as never)
-  expect(await ui.find({ type: 'Text', text: /Ship · 1 to decide/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '⚑ Ship' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /1 to decide/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Merge now\?/ })).toBeUndefined()
   await ui.unmount()
   await $.command.run({ command: 'action-items' } as never)
@@ -287,4 +292,46 @@ test('while Claude works the box folds to one line; /action-items opens it until
   ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
   expect(await ui.find({ type: 'Text', text: /Merge now\?/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('actions only: no tabs, and Copy all copies every open command', async ($, on) => {
+  on('clock.now', () => ({ value: 70_000 }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Two', actions: [{ text: 'One', command: 'run-1' }, { text: 'Two', command: 'run-2' }] } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'action-items', surface, ...BAND } as never)
+    expect(await ui.find({ key: 'tab-do' })).toBeUndefined()
+    expect(await ui.find({ key: 'tab-decide' })).toBeUndefined()
+    expect(await ui.find({ key: 'copy-all' })).toBeDefined()
+    await ui.unmount()
+  }
+  // One command left: Copy all goes, since the step's own Copy does the same.
+  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
+  await ui.press({ key: 'tick-70000-0' })
+  expect(await ui.find({ key: 'copy-all' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('remove drops an out-of-date action without ticking it', async ($, on) => {
+  on('clock.now', () => ({ value: 80_000 }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Test', actions: [{ text: 'Test 1.0.0' }, { text: 'Test 1.0.1' }] } as never)
+  const ran = await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Test', remove: [1] } as never)
+  expect(String(ran.result)).toContain('1 to do')
+  const ui = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
+  expect(await ui.find({ type: 'Text', text: 'Test 1.0.0' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Test 1.0.1' })).toBeDefined()
+  expect(await ui.find({ key: 'toggle-done' })).toBeUndefined()
+  await ui.unmount()
+  // Removing the last one empties the box.
+  await $.tool.call({ tool: 'mcp__action-items__action_items', title: 'Test', remove: [1] } as never)
+  const after = await $.ui.mount({ plugin: 'action-items', surface: 'terminal', ...BAND } as never)
+  expect(await after.find({ type: 'Text', text: /^⚑ / })).toBeUndefined()
+  await after.unmount()
 })

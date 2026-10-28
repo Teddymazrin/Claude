@@ -7,7 +7,7 @@ Seven mods for Claude Code. They all work in the terminal and in the desktop app
 | [Bare View](#bare-view) | 1.16.0 | Both | A live task checklist above the prompt, with what Claude is doing right now, a tally of every tool call and a peek at each step's calls; folds to one line when finished and hides the tool-call noise |
 | [Control Panel](#control-panel) | 1.14.0 | Both | A footer button that opens a panel to pick the model and effort, switch Bare View and Guard Rails on or off, and run quick actions |
 | [Session Manager](#session-manager) | 1.2.1 | Both | Plan, model, context, cache and usage (a row in the terminal; the cache time in the app's footer); a box when the cache goes cold; writes a handoff note by itself before the cache runs out while you're away; handoff reminders at 50/65/80% and a note to continue from in a fresh chat |
-| [Action Items](#action-items) | 8.1.0 | Both | Everything Claude needs from you, decisions apart from actions, in one list above the prompt; unfinished asks carry over |
+| [Action Items](#action-items) | 9.0.0 | Both | Everything Claude needs from you, decisions apart from actions, in one list above the prompt; unfinished asks carry over |
 | [Guard Rails](#guard-rails) | 1.0.0 | Both | Asks before risky commands and edits, and logs what it stopped |
 | [Tenant Lens](#tenant-lens) | 1.1.0 | Both | An **Azure Context** button beside Control Panel that reveals the Azure tenant and subscription az CLI and Az PowerShell are pointed at; red on production |
 | [Context Lens](#context-lens) | 1.2.0 | Both | Shows what is filling your context window, by category: system prompt, tools, memory files, MCP servers, skills and messages |
@@ -182,30 +182,30 @@ Uninstall only the ones you have. Then run `/reload-plugins`. A handoff note fro
 
 Whenever Claude needs something from you, it goes in one box above the prompt instead of getting lost in the chat: questions you answer, apart from things you do yourself. It replaced Action Steps and its side pane.
 
-The box has two tabs, so it stays small:
+The header reads `⚑ <task> · 2 to decide · 3 to do`. Questions and steps each have a tab, shown only when the box holds both:
 
-- **? Decide**: questions for you. The first waiting question opens with its options, and its line of context waits behind **▸ info**; the rest wait one line each, and answered ones fold into "✓ N answered". Click an option and your answer goes back to Claude as your reply; with several questions it waits until all are answered and sends them together. **Other…** (or **Answer…** for an open question) puts the question in the prompt box for you to type your own; sending it blank keeps the question open
-- **▶ Do**: things you do yourself, laid out as an STE procedure. One short intro says once what the steps do and what you need first. Then the numbered steps, each with its exact command and a **Copy** button. A step gets a second line only when the result matters: "Make sure that…". No info buttons. Click the number to tick it off
+- **? Decide**: questions for you. The first waiting question opens with its options; the rest wait one line each, and answered ones fold into "✓ N answered". The option Claude recommends comes first and reads `(recommended)`. Click an option and your answer goes back to Claude as your reply; with several questions it waits until all are answered and sends them together. **Other…** (or **Answer…** for an open question) puts the question in the prompt box for you to type your own; sending it blank keeps the question open. A question's background never opens by itself: **▸ info** opens it in a side pane (or, where there's no room for a pane, a small box under the question)
+- **▶ Do**: things you do yourself, as short plain steps. Each is a number, a few words, and its command in full (wrapped, never cut off) with a **Copy** button. **Copy all** in the header copies every open command at once. Click the number to tick it off
 
 The box opens on Decide while a question waits and moves to Do once they're answered; click a tab to switch.
 
-**In a short window** the Do tab first drops its blank lines, then keeps the command on one action and folds the rest to one row each (title · command, with Copy). Click a folded action's title (**▸**) to open it, and the open one's title (**▾**) to fold it. Ticked actions fold into **✓ N done ▸ show**, which lists them again so you can untick one.
+**Stays small:** ticked steps fold into **✓ N done ▸ show**, which lists them again so you can untick one. In a short window the blank lines between steps go.
 
 **Answering by typing:** a typed message doesn't wipe the box. Claude is told which questions are still open and clears only the ones your message answered.
 
 **Updates on the fly:** when what Claude needs changes, it updates the box in the same turn. While the box holds open asks, Claude is reminded of them with each message.
 
-**Steps in STE:** the intro and every step are written in Simplified Technical English, like the `ste` skill, without loading that skill. The mod checks them (no semicolons, contractions, should/may/might/could/would, check/verify/confirm/ensure, a step 20 words or fewer, an intro 3 sentences or fewer, and a check that starts with "Make sure that") and sends back any that break a rule. A risky step shows a **CAUTION:** (data, a service or access) or **WARNING:** (people) line before it.
+**Plain steps:** Claude writes each step in a few everyday words and keeps commands short (a `cd` first rather than long paths). Any risk is said once in Claude's reply, not as notices in the box.
 
 **Only Claude fills it:** the box shows only what Claude put there itself. The mod doesn't guess from the reply, so nothing in the box is a false alarm. If Claude ends a turn with a question or a step for you and forgets the box, the mod sends it back once to put it there.
 
-**Ticks itself:** an action whose command runs exactly as given is ticked for you: a slash command you run (`/reload-plugins`), a command you paste as your message, or one Claude runs for you that succeeds. A toast says so. Claude also sees the open actions with each message and ticks the ones the conversation shows are finished. Click a ticked number to untick it.
+**Ticks itself:** an action whose command runs exactly as given is ticked for you: a slash command you run (`/reload-plugins`), a command you paste as your message, or one Claude runs for you that succeeds. A toast says so. Claude also sees the open actions with each message and ticks the ones the conversation shows are finished, or removes ones a newer step replaced (those aren't marked done). Click a ticked number to untick it.
 
 **One box per conversation:** each conversation keeps its own asks. A new conversation (or `/clear`) starts with an empty box, and resuming a conversation brings its box back.
 
-**One list, nothing stacks:** the box holds one list. New asks from Claude go on top. Anything you haven't finished from before moves under a dim **── Earlier ──** line in the same list and stays until you tick it, or drop it with its **✕**. Finished ones drop off. There are no older sets to page through.
+**One list, nothing stacks:** the box holds one list. New asks from Claude go on top. Anything you haven't finished from before folds into one **── N earlier ▸** line under them; click it to list those asks, and drop one with its **✕**. They stay until you tick or drop them. Finished ones drop off.
 
-**Closing it:** the box closes once nothing in it is still open, or with ✕. ✕ only hides the box; `/action-items` brings back what's still open. **Mark as done** (next to ✕) ticks off everything in the box and closes it; questions it closes don't send an answer to Claude.
+**Closing it:** the box closes once nothing in it is still open. **Mark as done** ticks off everything in the box and closes it; questions it closes don't send an answer to Claude. `/action-items hide` only hides the box, and `/action-items` brings back what's still open.
 
 **While Claude is working:** the box's buttons only respond once Claude stops. To finish it mid-turn, type `/action-items done` or `/action-items hide`; these run straight away.
 
