@@ -1,0 +1,10 @@
+{
+  "name": "tenant-lens",
+  "version": "1.1.0",
+  "description": "Tenant Lens. Shows the Azure tenant, subscription and account that az CLI and Az PowerShell are pointed at, behind an Azure Context button beside Control Panel, read from local files with no tokens or network calls",
+  "author": {
+    "name": "Teddymazrin"
+  },
+  "homepage": "https://github.com/Teddymazrin/Claude/tree/main/claude-code-mods",
+  "license": "MIT"
+}

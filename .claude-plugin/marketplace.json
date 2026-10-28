@@ -1,0 +1,44 @@
+{
+  "name": "teddymazrin-mods",
+  "description": "Claude Code mods by Teddymazrin",
+  "owner": {
+    "name": "Teddymazrin"
+  },
+  "plugins": [
+    {
+      "name": "bare-view",
+      "source": "./claude-code-mods/bare-view",
+      "description": "Live task checklist above the prompt; hides tool-call noise"
+    },
+    {
+      "name": "control-panel",
+      "source": "./claude-code-mods/control-panel",
+      "description": "Model and effort picker, settings and quick actions"
+    },
+    {
+      "name": "action-items",
+      "source": "./claude-code-mods/action-items",
+      "description": "Everything Claude needs from you, decisions apart from actions, in a box above the prompt"
+    },
+    {
+      "name": "guard-rails",
+      "source": "./claude-code-mods/guard-rails",
+      "description": "Asks before risky commands and edits; logs what it stopped"
+    },
+    {
+      "name": "session-manager",
+      "source": "./claude-code-mods/session-manager",
+      "description": "Plan, model, context, cache and usage (terminal row or app footer), a cold-cache box, and handoff reminders and notes"
+    },
+    {
+      "name": "context-lens",
+      "source": "./claude-code-mods/context-lens",
+      "description": "Shows what is filling your context window, by category, in a pane"
+    },
+    {
+      "name": "tenant-lens",
+      "source": "./claude-code-mods/tenant-lens",
+      "description": "Shows the Azure tenant, subscription and account in use, under the prompt; no tokens"
+    }
+  ]
+}

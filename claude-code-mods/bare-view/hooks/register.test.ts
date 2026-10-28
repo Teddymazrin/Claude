@@ -1,0 +1,299 @@
+import { expect, test } from 'claude-code/testing'
+
+import { PEEK_MAX, advanceChecklist, answerIds, finishActive, isClosed, isMuted, activityLine, addCall, chunkPhase, foldedLine, bar, callDetail, carryCalls, countCall, duration, elapsed, endCall, failCall, peekLines, resultPreview, finishCall, fit, isInProgress, mcpServer, mix, parseChecklist, progress, REMINDER, withReminder, statusWord, tallyGroups, toolLabel, stepWindow, skillsLine } from './register'
+
+test('tallies every tool by name, MCP ones by server, and the one running', () => {
+  expect(mcpServer('Bash')).toBeUndefined()
+  expect(mcpServer('mcp__claude_ai_Gmail__search')).toBe('Gmail')
+  expect(mcpServer('mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search')).toBe('microsoft-learn')
+  expect(toolLabel('Bash')).toBe('Bash')
+  expect(toolLabel('mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search')).toBe('microsoft-learn › microsoft_docs_search')
+  let t = countCall(undefined, 'Bash')
+  t = countCall(t, 'Read')
+  t = countCall(t, 'Bash')
+  t = countCall(t, 'mcp__claude_ai_Gmail__search')
+  t = countCall(t, 'mcp__claude_ai_Gmail__read')
+  t = countCall(t, 'mcp__ide__getDiagnostics')
+  expect(t).toEqual({
+    total: 6,
+    mcp: { 'Gmail › search': 1, 'Gmail › read': 1, 'ide › getDiagnostics': 1 },
+    builtIn: { Bash: 2, Read: 1 },
+    skills: {},
+    running: 'ide › getDiagnostics',
+  })
+  // Each group with its count and the tools it ran, the most used first.
+  expect(tallyGroups(t)).toEqual([
+    { key: 'builtIn', label: 'Built-in', n: 3, tools: [['Bash', 2], ['Read', 1]] },
+    { key: 'mcp', label: 'MCP', n: 3, tools: [['Gmail › read', 1], ['Gmail › search', 1], ['ide › getDiagnostics', 1]] },
+  ])
+  // The running tool clears when it finishes, but not when an earlier call finishes after a newer one started.
+  expect(finishCall(t, 'Bash')?.running).toBe('ide › getDiagnostics')
+  expect(finishCall(t, 'mcp__ide__getDiagnostics')?.running).toBeUndefined()
+  expect(tallyGroups({ total: 2, mcp: { Gmail: 2 } })).toEqual([{ key: 'mcp', label: 'MCP', n: 2, tools: [['Gmail', 2]] }])
+  // A tally saved before tools were named still counts, with nothing to list.
+  expect(tallyGroups({ total: 3, mcp: { 'microsoft-learn': 1 } })[0]).toEqual({ key: 'builtIn', label: 'Built-in', n: 2, tools: [] })
+})
+
+test('a Skill call also counts the skill it loaded, for the skills row', () => {
+  expect(skillsLine(undefined)).toBe('')
+  let t = countCall(undefined, 'Skill', 'simplify')
+  t = countCall(t, 'Bash', 'not-a-skill')
+  t = countCall(t, 'Skill', 'plugin-authoring')
+  t = countCall(t, 'Skill', 'simplify')
+  expect(t.skills).toEqual({ simplify: 2, 'plugin-authoring': 1 })
+  expect(t.builtIn).toEqual({ Skill: 3, Bash: 1 })
+  expect(skillsLine(t)).toBe('simplify ×2, plugin-authoring')
+})
+
+test('parses and scores a checklist', () => {
+  const list = parseChecklist({
+    goal: 'Write the script',
+    steps: [
+      { text: 'Look up syntax', status: 'done' },
+      { text: 'Write the file', status: 'active' },
+      { text: 'Check it parses', status: 'bogus' },
+    ],
+  })
+  expect(typeof list).toBe('object')
+  if (typeof list === 'string') return
+  expect(list.steps[2]?.status).toBe('todo')
+  expect(progress(list)).toEqual({ done: 1, total: 3, percent: 33, failed: 0 })
+  expect(bar(1, 3, 6)).toBe('██░░░░')
+  expect(bar(0, 0, 4)).toBe('░░░░')
+})
+
+test('rejects a checklist without a goal or steps', () => {
+  expect(parseChecklist({ steps: [] })).toContain('goal')
+  expect(parseChecklist({ goal: 'x' })).toContain('steps')
+  expect(parseChecklist({ goal: 'x', steps: [{ status: 'done' }] })).toContain('text')
+})
+
+test('the tool call updates the checklist and answers the model', async ($, on) => {
+  const statuses: (string | undefined)[] = []
+  on('ui.status', ($, e) => {
+    statuses.push(e.text)
+    return { value: undefined }
+  })
+  on('clock.now', () => ({ value: 1_000 }))
+
+  const ran = await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Build the mod',
+    steps: [
+      { text: 'Read the API', status: 'done' },
+      { text: 'Write the hooks', status: 'active' },
+    ],
+  } as never)
+
+  expect(ran.deny).toBeUndefined()
+  expect(ran.result).toBe('Checklist updated.')
+  expect(statuses.filter(t => t !== undefined)).toEqual([])
+})
+
+test('the per-prompt reminder names the tool and how to load it', () => {
+  expect(REMINDER).toContain('mcp__bare-view__checklist')
+  expect(REMINDER).toContain('select:mcp__bare-view__checklist')
+})
+
+test('reads each step as Done, Working, Next or Up next', () => {
+  const steps = [
+    { text: 'a', status: 'done' as const },
+    { text: 'b', status: 'active' as const },
+    { text: 'c', status: 'todo' as const },
+    { text: 'd', status: 'todo' as const },
+  ]
+  expect(steps.map((_, i) => statusWord(steps, i))).toEqual(['Done', 'Working', 'Next', 'Up next'])
+})
+
+test('a checklist is in progress until every step is done', () => {
+  expect(isInProgress(null)).toBe(false)
+  expect(isInProgress({ goal: 'g', steps: [] })).toBe(false)
+  expect(isInProgress({ goal: 'g', steps: [{ text: 'a', status: 'active' }] })).toBe(true)
+  expect(isInProgress({ goal: 'g', steps: [{ text: 'a', status: 'done' }] })).toBe(false)
+})
+
+test('formats the timer, fits text and blends colours', () => {
+  expect(elapsed(9_400)).toBe('9s')
+  expect(elapsed(75_000)).toBe('1m 15s')
+  expect(fit('Publish it', 12)).toBe('Publish it  ')
+  expect(fit('Check how the page gets live weather', 10)).toBe('Check how…')
+  expect(mix('#000000', '#ffffff', 0.5)).toBe('#808080')
+  expect(mix('#ff9a4d', '#ff4f8b', 0)).toBe('#ff9a4d')
+})
+
+test('describes a call by its command, file or query', () => {
+  expect(callDetail('Bash', { command: 'git   status\n--short' })).toBe('git status --short')
+  expect(callDetail('Read', { file_path: '/repo/README.md' })).toBe('/repo/README.md')
+  expect(callDetail('WebSearch', { query: 'rbac roles' })).toBe('rbac roles')
+  expect(callDetail('mcp__x__find', { tool: 'mcp__x__find', name: 'teddy' })).toBe('teddy')
+  expect(callDetail('Bash', { command: 'x'.repeat(100) }).length).toBe(70)
+})
+
+test('files each call under the step that is open', () => {
+  const call = (id: string) => ({ id, tool: 'Bash', detail: id })
+  let list = addCall({ goal: 'g', steps: [] }, call('early'))
+  expect(list.early?.map(c => c.id)).toEqual(['early'])
+  list = { ...list, steps: carryCalls(list, [{ text: 'A', status: 'active' }, { text: 'B', status: 'todo' }]) }
+  expect(list.steps[0]?.calls?.map(c => c.id)).toEqual(['early'])
+  list = addCall(list, call('a1'))
+  list = { ...list, steps: [{ ...list.steps[0]!, status: 'done' }, { ...list.steps[1]!, status: 'active' }] }
+  list = addCall(list, call('b1'))
+  expect(list.steps[0]?.calls?.map(c => c.id)).toEqual(['early', 'a1'])
+  expect(list.steps[1]?.calls?.map(c => c.id)).toEqual(['b1'])
+  list = failCall(list, 'b1')
+  expect(list.steps[1]?.calls?.[0]?.isError).toBe(true)
+})
+
+test('a new plan keeps calls by step text, then by place', () => {
+  const calls = [{ id: '1', tool: 'Read', detail: 'x' }]
+  const before = { goal: 'g', steps: [{ text: 'Read files', status: 'done' as const, calls }, { text: 'Edit', status: 'active' as const }] }
+  const moved = carryCalls(before, [{ text: 'Plan', status: 'done' }, { text: 'Read files', status: 'done' }, { text: 'Edit', status: 'active' }])
+  expect(moved[1]?.calls).toEqual(calls)
+  expect(moved[0]?.calls).toBeUndefined()
+  const reworded = carryCalls(before, [{ text: 'Read the files', status: 'done' }, { text: 'Edit', status: 'active' }])
+  expect(reworded[0]?.calls).toEqual(calls)
+})
+
+test('a peek lists the newest calls and counts the rest', () => {
+  const calls = Array.from({ length: PEEK_MAX + 3 }, (_, i) => ({ id: String(i), tool: 'Bash', detail: String(i) }))
+  const { shown, hidden } = peekLines(calls)
+  expect(shown.length).toBe(PEEK_MAX)
+  expect(hidden).toBe(3)
+  expect(shown[0]?.id).toBe('3')
+})
+
+test('a peeked call shows how long it took and the first line it returned', () => {
+  expect(duration(42)).toBe('42ms')
+  expect(duration(2400)).toBe('2.4s')
+  expect(duration(65_000)).toBe('1m 05s')
+  expect(resultPreview({ text: '\n\n  On branch main\nnothing to commit' })).toBe('On branch main')
+  expect(resultPreview({ result: 'Checklist updated.' })).toBe('Checklist updated.')
+  expect(resultPreview({ deny: 'Guard Rails blocked this call' })).toBe('Guard Rails blocked this call')
+  expect(resultPreview({ result: { files: [] } })).toBe('')
+  const list = addCall({ goal: 'g', steps: [{ text: 'A', status: 'active' }] }, { id: 'c1', tool: 'Bash', detail: 'ls' })
+  const ended = endCall(list, 'c1', { isError: false, ms: 120, preview: 'a.txt' })
+  expect(ended.steps[0]?.calls?.[0]).toEqual({ id: 'c1', tool: 'Bash', detail: 'ls', isError: false, ms: 120, preview: 'a.txt' })
+})
+
+test('names the phase of each piece of a reply, and words the activity row', () => {
+  expect(chunkPhase('thinking')).toBe('thinking')
+  expect(chunkPhase('text')).toBe('writing')
+  expect(chunkPhase('tool')).toBe('calling')
+  expect(chunkPhase('input')).toBeUndefined()
+  expect(chunkPhase('stop')).toBeUndefined()
+  expect(activityLine({ phase: 'thinking', since: 0 }, 6_000)).toEqual({ verb: 'Thinking', took: '6s' })
+  expect(activityLine({ phase: 'calling', since: 0, tool: 'Edit' }, 500).verb).toBe('Starting Edit')
+  expect(activityLine({ phase: 'running', since: 0, tool: 'Bash', agents: 2 }, 65_000)).toEqual({
+    verb: 'Running Bash',
+    took: '1m 05s · 2 agents working',
+  })
+  expect(activityLine({ phase: 'waiting', since: 0, agents: 1 }, 0)).toEqual({ verb: 'Waiting for the model', took: '0s · 1 agent working' })
+})
+
+test('words the approval wait, and folds a finished checklist into one line', () => {
+  expect(activityLine({ phase: 'approval', since: 0, tool: 'Edit' }, 3_000)).toEqual({
+    verb: 'Waiting for you to approve Edit',
+    took: '3s',
+  })
+  const steps = [
+    { text: 'A', status: 'done' as const, calls: [{ id: '1', tool: 'Bash', detail: 'ls' }, { id: '2', tool: 'Read', detail: 'x', isError: true }] },
+    { text: 'B', status: 'done' as const },
+  ]
+  expect(foldedLine({ goal: 'G', steps, tally: { total: 2, mcp: {} } }, '2m 13s')).toBe('All 2 done · 2m 13s · 2 tool calls · 1 error')
+  expect(foldedLine({ goal: 'G', steps: [{ text: 'A', status: 'done' }] }, '4s')).toBe('All 1 done · 4s')
+})
+
+test('a failed step is over: it fills the bar, ends the checklist and reads Failed', () => {
+  const steps = [
+    { text: 'Push', status: 'failed' as const },
+    { text: 'Tidy', status: 'done' as const },
+  ]
+  const list = { goal: 'G', steps }
+  expect(isClosed(steps[0]!)).toBe(true)
+  expect(progress(list)).toEqual({ done: 2, total: 2, percent: 100, failed: 1 })
+  expect(isInProgress(list)).toBe(false)
+  expect(statusWord(steps, 0)).toBe('Failed')
+  expect(parseChecklist({ goal: 'G', steps: [{ text: 'Push', status: 'failed' }] })).toEqual({ goal: 'G', steps: [{ text: 'Push', status: 'failed' }] })
+  expect(foldedLine({ ...list, tally: { total: 3, mcp: {} } }, '9s')).toBe('1 done · 1 step failed · 9s · 3 tool calls')
+  // A new call goes to the open step, never to a failed one.
+  const later = addCall({ goal: 'G', steps: [{ text: 'A', status: 'failed' }, { text: 'B', status: 'todo' }] }, { id: 'x', tool: 'Bash', detail: '' })
+  expect(later.steps[1]!.calls?.length).toBe(1)
+})
+
+test('a failed step keeps its reason; a peek shows the error, not just the exit code', () => {
+  expect(parseChecklist({ goal: 'G', steps: [{ text: 'Push', status: 'failed', reason: '  GitHub rejected   it ' }] })).toEqual({
+    goal: 'G',
+    steps: [{ text: 'Push', status: 'failed', reason: 'GitHub rejected it' }],
+  })
+  // Only a failed step takes one.
+  expect(parseChecklist({ goal: 'G', steps: [{ text: 'Push', status: 'done', reason: 'x' }] })).toEqual({ goal: 'G', steps: [{ text: 'Push', status: 'done' }] })
+  expect(resultPreview({ text: 'Exit code 128\nfatal: Needed a single revision' })).toBe('fatal: Needed a single revision (exit 128)')
+  expect(resultPreview({ text: 'Exit code 1' })).toBe('Exit code 1')
+})
+
+test('the reminder goes along only until a system prompt carries the instructions', () => {
+  expect(withReminder(['x'], false)).toEqual(['x', REMINDER])
+  expect(withReminder(['x'], true)).toEqual(['x'])
+  expect(withReminder([], true)).toEqual([])
+})
+
+test('advance moves the list on one step at a time, without resending it', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  const list = { goal: 'G', steps: [{ text: 'A', status: 'active' as const }, { text: 'B', status: 'todo' as const }, { text: 'C', status: 'todo' as const }] }
+  expect(advanceChecklist(list).steps.map(s => s.status)).toEqual(['done', 'active', 'todo'])
+  expect(advanceChecklist(advanceChecklist(advanceChecklist(list))).steps.map(s => s.status)).toEqual(['done', 'done', 'done'])
+  // Nothing to advance before a plan.
+  expect((await $.tool.call({ tool: 'mcp__bare-view__checklist', advance: true } as never)).isError).toBe(true)
+  await $.tool.call({ tool: 'mcp__bare-view__checklist', ...list } as never)
+  const ran = await $.tool.call({ tool: 'mcp__bare-view__checklist', advance: true } as never)
+  expect(ran.isError).toBeFalsy()
+  expect(ran.result).toBe('Checklist updated.')
+  await $.tool.call({ tool: 'mcp__bare-view__checklist', advance: true } as never)
+  // The call that finishes the list hands back the answer's shape.
+  const last = await $.tool.call({ tool: 'mcp__bare-view__checklist', advance: true } as never)
+  expect(last.result).toContain('Checklist finished')
+  expect(last.result).toContain('**Status line**')
+  expect(last.result).toContain('Changes made:')
+  expect(last.result).toContain('💡 **Recommendation:**')
+})
+
+test('a message keeps the verdict of its first drawing, so earlier answers stay when redrawn', () => {
+  const verdicts = new Map<string, boolean>()
+  // The last answer, drawn once the list was done: shown.
+  expect(isMuted(verdicts, 'answer-1', false)).toBe(false)
+  // Working text written during the next checklist: hidden.
+  expect(isMuted(verdicts, 'working-2', true)).toBe(true)
+  // A scroll or resize redraws the old answer while that checklist is open: still shown.
+  expect(isMuted(verdicts, 'answer-1', true)).toBe(false)
+  expect(isMuted(verdicts, 'working-2', false)).toBe(true)
+})
+
+test('an answered turn finishes the step left working, and only that one', () => {
+  const list = { goal: 'Ship it', steps: [{ text: 'One', status: 'done' as const }, { text: 'Two', status: 'active' as const }, { text: 'Three', status: 'todo' as const }] }
+  expect(finishActive(list).steps.map(s => s.status)).toEqual(['done', 'done', 'todo'])
+  const last = { goal: 'Ship it', steps: [{ text: 'One', status: 'done' as const }, { text: 'Two', status: 'active' as const }] }
+  expect(isInProgress(finishActive(last))).toBe(false)
+  // Nothing working: left as it is.
+  const failed = { goal: 'Ship it', steps: [{ text: 'One', status: 'failed' as const, reason: 'No push' }] }
+  expect(finishActive(failed)).toBe(failed)
+})
+
+test('stepWindow shows every step that fits, else a run around the focus with room for the counts', () => {
+  expect(stepWindow([1, 1, 1], 1, 3)).toEqual({ start: 0, end: 3 })
+  // 10 steps, 4 rows: the focus, the next one, and a row each for the counts.
+  expect(stepWindow(Array(10).fill(1), 5, 4)).toEqual({ start: 5, end: 7 })
+  // At the end there is no "more" row, so one more step fits before.
+  expect(stepWindow(Array(10).fill(1), 9, 4)).toEqual({ start: 7, end: 10 })
+  // No room at all still shows the focus.
+  expect(stepWindow(Array(10).fill(1), 0, 0)).toEqual({ start: 0, end: 1 })
+})
+
+test('an answer muted while a step was left open is picked out to show again', () => {
+  const texts = new Map([
+    ['working-1', 'Found the repo; reading the source.'],
+    ['answer-2', '✅ **The effort pick works again.**'],
+    ['blank-3', '  '],
+  ])
+  expect(answerIds(texts, '✅ **The effort pick works again.**\n\nChanges made:\n- Effort menu saves the pick')).toEqual(['answer-2'])
+  expect(answerIds(texts, 'something else')).toEqual([])
+})

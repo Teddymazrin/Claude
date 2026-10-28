@@ -1,0 +1,266 @@
+import { expect, test } from 'claude-code/testing'
+
+const BAND = {
+  component: 'AbovePrompt',
+  viewport: { columns: 160, rows: 40 },
+  props: { hasSurvey: false, isWorking: true, maxRows: 20, bodyColumns: 156, scroll: { offset: 0, bodyRows: 20 }, view: {} },
+} as const
+
+test('each tally group expands to list its tools', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  // Stands for the engine: answers the tools and draws an empty band beneath.
+  on('tool.call', () => ({ result: 'ok' }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Check the tally',
+    steps: [{ text: 'Run tools', status: 'active' }, { text: 'Finish', status: 'todo' }],
+  } as never)
+  await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+  await $.tool.call({ tool: 'Read', file_path: 'x' } as never)
+  await $.tool.call({ tool: 'mcp__plugin_microsoft-docs_microsoft-learn__microsoft_docs_search', query: 'rbac' } as never)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND } as never)
+    expect(await ui.find({ type: 'Text', text: /3 tool calls/ })).toBeTruthy()
+    // Collapsed, each group is just its count.
+    expect(await ui.find({ key: 'tally-builtIn' })).toBeTruthy()
+    expect(await ui.find({ key: 'tally-mcp' })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /microsoft_docs_search/ })).toBeFalsy()
+    await ui.press({ key: 'tally-mcp' })
+    expect(await ui.find({ type: 'Text', text: /microsoft-learn › microsoft_docs_search/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /› Bash 1/ })).toBeFalsy()
+    await ui.press({ key: 'tally-builtIn' })
+    expect(await ui.find({ type: 'Text', text: /› Bash 1/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /› Read 1/ })).toBeTruthy()
+    // Pressed again, they fold back up.
+    await ui.press({ key: 'tally-mcp' })
+    await ui.press({ key: 'tally-builtIn' })
+    expect(await ui.find({ type: 'Text', text: /microsoft_docs_search/ })).toBeFalsy()
+    expect(await ui.find({ type: 'Text', text: /› Bash 1/ })).toBeFalsy()
+    await ui.unmount()
+  }
+})
+
+test('pressing a step peeks at its tool calls, and again hides them', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('tool.call', ($, e) => (e.tool === 'Read' ? { result: 'nope', isError: true } : { result: 'ok' }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Peek test',
+    steps: [{ text: 'Look around', status: 'active' }, { text: 'Finish', status: 'todo' }],
+  } as never)
+  await $.tool.call({ tool: 'Bash', command: 'git status', tool_use_id: 't1' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/repo/missing.md', tool_use_id: 't2' } as never)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND } as never)
+    expect(await ui.find({ type: 'Text', text: /git status/ })).toBeFalsy()
+    // A tool error alone is no failed step: the bullet stays as it is.
+    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeFalsy()
+    await ui.press({ key: 'peek-0' })
+    expect(await ui.find({ type: 'Text', text: /git status/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /missing\.md/ })).toBeTruthy()
+    // In the peek the errored call is flagged with an orange "!".
+    expect(await ui.find({ type: 'Text', text: '! ' })).toBeTruthy()
+    // What each call returned, and how long it took, show under it.
+    expect(await ui.find({ type: 'Text', text: /↳ nope/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: '0ms' })).toBeTruthy()
+    await ui.press({ key: 'peek-0' })
+    expect(await ui.find({ type: 'Text', text: /git status/ })).toBeFalsy()
+    expect(await ui.find({ key: 'peek-1' })).toBeFalsy()
+    await ui.unmount()
+  }
+})
+
+test('the activity row names the running tool, not its command, even with no checklist, and only while working', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  const seen: boolean[] = []
+  // Stands for the engine: looks at the band while the tool is still running.
+  on('tool.call', async () => {
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND } as never)
+      seen.push(Boolean(await ui.find({ type: 'Text', text: 'Running Bash' })))
+      seen.push(Boolean(await ui.find({ type: 'Text', text: /npm test/ })))
+      await ui.unmount()
+    }
+    return { result: 'ok' }
+  })
+
+  await $.tool.call({ tool: 'Bash', command: 'npm test', tool_use_id: 'a1' } as never)
+  expect(seen).toEqual([true, false, true, false])
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    // The call is over: the model is reading what it returned.
+    const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND } as never)
+    expect(await ui.find({ type: 'Text', text: 'Waiting for the model' })).toBeTruthy()
+    await ui.unmount()
+    // Between turns there is nothing to show.
+    const idle = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND, props: { ...BAND.props, isWorking: false } } as never)
+    expect(await idle.find({ type: 'Text', text: 'Waiting for the model' })).toBeFalsy()
+    await idle.unmount()
+  }
+})
+
+test('a call waiting at the permission dialog reads as waiting for you, not running', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  // No settings hook decides: the dialog would show.
+  on('classic.PermissionRequest', () => ({}))
+  const seen: boolean[] = []
+  // Stands for the engine: raises the dialog's hook mid-call, then looks at the band.
+  on('tool.call', async () => {
+    await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'npm publish' } })
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND } as never)
+      seen.push(Boolean(await ui.find({ type: 'Text', text: 'Waiting for you to approve Bash' })))
+      seen.push(Boolean(await ui.find({ type: 'Text', text: /npm publish/ })))
+      seen.push(Boolean(await ui.find({ type: 'Text', text: 'Running Bash' })))
+      await ui.unmount()
+    }
+    return { result: 'ok' }
+  })
+
+  await $.tool.call({ tool: 'Bash', command: 'npm publish', tool_use_id: 'p1' } as never)
+  expect(seen).toEqual([true, false, false, true, false, false])
+})
+
+test('a finished checklist folds to one line, and opens out and folds back on a press', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('tool.call', ($, e) => (e.tool === 'Read' ? { result: 'nope', isError: true } : { result: 'ok' }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Fold test',
+    steps: [{ text: 'Look around', status: 'active' }, { text: 'Finish', status: 'todo' }],
+  } as never)
+  await $.tool.call({ tool: 'Bash', command: 'ls', tool_use_id: 'f1' } as never)
+  await $.tool.call({ tool: 'Read', file_path: 'gone.md', tool_use_id: 'f2' } as never)
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Fold test',
+    steps: [{ text: 'Look around', status: 'done' }, { text: 'Finish', status: 'done' }],
+  } as never)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND, props: { ...BAND.props, isWorking: false } } as never)
+    expect(await ui.find({ key: 'unfold' })).toBeTruthy()
+    expect(await ui.find({ key: 'peek-0' })).toBeFalsy()
+    await ui.press({ key: 'unfold' })
+    expect(await ui.find({ key: 'peek-0' })).toBeTruthy()
+    expect(await ui.find({ key: 'fold' })).toBeTruthy()
+    await ui.press({ key: 'fold' })
+    expect(await ui.find({ key: 'peek-0' })).toBeFalsy()
+    expect(await ui.find({ key: 'unfold' })).toBeTruthy()
+    await ui.unmount()
+  }
+})
+
+test('only a step Claude marks failed gets the pink ✗, folded and opened out', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('tool.call', () => ({ result: 'rejected', isError: true }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Ship it',
+    steps: [{ text: 'Push to main', status: 'active' }, { text: 'Tidy up', status: 'todo' }],
+  } as never)
+  await $.tool.call({ tool: 'Bash', command: 'git push', tool_use_id: 'g1' } as never)
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Ship it',
+    steps: [{ text: 'Push to main', status: 'failed', reason: 'GitHub rejected the push' }, { text: 'Tidy up', status: 'done' }],
+  } as never)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'bare-view', surface, ...BAND, props: { ...BAND.props, isWorking: false } } as never)
+    // Folded: the line says a step failed, apart from the tool error count.
+    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeTruthy()
+    // What failed and why stay in view while folded.
+    expect(await ui.find({ type: 'Text', text: /✗ Push to main: GitHub rejected the push/ })).toBeTruthy()
+    await ui.press({ key: 'unfold' })
+    // Opened out: the step reads Failed under its ✗, and the label folds it back.
+    expect(await ui.find({ type: 'Text', text: /Failed/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /↳ GitHub rejected the push/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: '✗ ' })).toBeTruthy()
+    // Folded back, so the next surface starts folded too.
+    await ui.press({ key: 'fold' })
+    await ui.unmount()
+  }
+})
+
+test('in a short band only the steps around the working one show, the rest counted', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('tool.call', () => ({ result: 'ok' }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  const steps = Array.from({ length: 10 }, (_, i) => ({ text: `Step number ${i + 1}`, status: i < 5 ? 'done' : i === 5 ? 'active' : 'todo' }))
+  await $.tool.call({ tool: 'mcp__bare-view__checklist', goal: 'Long plan', steps } as never)
+  // 12 rows, 3 kept for Action Items, 4 for the frame, goal and bar: 5 for steps and the counts.
+  const SHORT = { ...BAND, props: { ...BAND.props, maxRows: 12 } }
+  const ui = await $.ui.mount({ plugin: 'bare-view', surface: 'terminal', ...SHORT } as never)
+  expect(await ui.find({ type: 'Text', text: /Step number 6/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Step number 7/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Step number 1\b/ })).toBeFalsy()
+  expect((await ui.find({ key: 'steps-before' }))?.text).toBe('✓ … 4 done')
+  expect(await ui.find({ type: 'Text', text: /Step number 5/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /○ 3 more/ })).toBeTruthy()
+  await ui.unmount()
+  // With room for all of them, all ten show and nothing is counted.
+  const tall = await $.ui.mount({ plugin: 'bare-view', surface: 'terminal', ...BAND, props: { ...BAND.props, maxRows: 40 } } as never)
+  expect(await tall.find({ type: 'Text', text: /Step number 1\b/ })).toBeTruthy()
+  expect(await tall.find({ type: 'Text', text: /more$/ })).toBeFalsy()
+  await tall.unmount()
+})
+
+test('the skills Claude loaded show in their own row, only once one is called', async ($, on) => {
+  on('clock.now', () => ({ value: 1_000 }))
+  on('tool.call', () => ({ result: 'ok' }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  await $.tool.call({
+    tool: 'mcp__bare-view__checklist',
+    goal: 'Check the skills row',
+    steps: [{ text: 'Load skills', status: 'active' }, { text: 'Finish', status: 'todo' }],
+  } as never)
+  await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+  let ui = await $.ui.mount({ plugin: 'bare-view', surface: 'terminal', ...BAND } as never)
+  expect(await ui.find({ type: 'Text', text: /Skills:/ })).toBeFalsy()
+  await ui.unmount()
+
+  await $.tool.call({ tool: 'Skill', skill: 'plugin-authoring' } as never)
+  await $.tool.call({ tool: 'Skill', skill: 'simplify' } as never)
+  await $.tool.call({ tool: 'Skill', skill: 'simplify' } as never)
+  ui = await $.ui.mount({ plugin: 'bare-view', surface: 'terminal', ...BAND } as never)
+  expect(await ui.find({ type: 'Text', text: /Skills:/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /simplify ×2, plugin-authoring/ })).toBeTruthy()
+  await ui.unmount()
+})

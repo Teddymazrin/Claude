@@ -1,0 +1,1014 @@
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
+
+import type { Action, Decision, Item, StepSet } from '../types'
+
+const PLUGIN = 'action-items'
+const COMMAND = 'action-items'
+const TOOL = 'action_items'
+const TOOL_ID = `mcp__${PLUGIN}__${TOOL}`
+
+const sets = atom({ plugin: 'action-items', key: 'sets' } as const, [])
+const band = atom({ plugin: 'action-items', key: 'band' } as const, null)
+const tab = atom({ plugin: 'action-items', key: 'tab' } as const, null)
+// The action opened in full ("<set id>:<index>") when the box is too short to open them all.
+const openAction = atom({ plugin: 'action-items', key: 'focus' } as const, null)
+// Whether ticked actions folded into "✓ N done" are listed again, to untick one.
+const showDone = atom({ plugin: 'action-items', key: 'showDone' } as const, false)
+// The asks whose info is opened: "a:<set id>:<index>" for an action, "d:..." for a decision.
+const info = atom({ plugin: 'action-items', key: 'info' } as const, [] as string[])
+// True once a system prompt carries the instructions; until then each prompt carries the reminder.
+const composed = atom({ plugin: 'action-items', key: 'composed' } as const, false)
+// True once /action-items opened the box out mid-turn; each new prompt folds it again.
+const expanded = atom({ plugin: 'action-items', key: 'expanded' } as const, false)
+
+// One accent, Claude's orange, on neutral greys: orange frame and header, near-white text,
+// charcoal buttons that turn orange on hover.
+const C = {
+  frame: '#d97757',
+  title: '#d97757',
+  decide: '#ececea',
+  do: '#ececea',
+  done: '#8e8e93',
+  code: '#1c1c1e',
+  chip: '#2c2c2e',
+  btn: '#2c2c2e',
+  btnHover: '#c4623f',
+  warning: '#ff453a',
+}
+
+const INSTRUCTIONS = `# Action Items box
+The user keeps an Action Items box above the prompt for everything you need from them. It shows decisions (questions they answer) apart from actions (things they do themselves), so they never have to dig through your reply to find what you are waiting on.
+- Whenever you end a turn needing something from the user, call \`${TOOL_ID}\` before your final answer (load it with ToolSearch "select:${TOOL_ID}" if it is not loaded). That covers:
+  - \`decisions\`: any question you want answered, a choice between approaches, information only they have, a go-ahead. Give 2-4 short \`options\` when the answer is one of a few choices; they click one and it comes back to you as their reply. Leave \`options\` out for an open question. Add a \`detail\` line when the choice needs context (what each option means, what you'd recommend).
+  - \`actions\`: what they must do themselves: run a script, fill in a parameter, sign in, check a portal setting, restart something. Only what actually needs them; never filler like "look over the code" or "test the button" with nothing specific to find. Write each so they could do it without reading your reply:
+    - \`text\`: one step, as a command, 20 words or fewer: where and what ("In PowerShell, run the setup script", not "Check it works"). A condition goes first: "If the light is red, stop the pump."
+    - \`check\`: only when the result matters, one sentence that starts with "Make sure that" ("Make sure that the output shows 3 subscriptions.").
+    - \`command\`: the exact command where there is one (real paths, placeholders in <angle brackets>).
+    - \`caution\` (risk to data, a service or access) or \`warning\` (risk to people): the command or condition first, then the risk. Say "You cannot undo this step." when that is true.
+  - \`intro\`: 1 to 3 short sentences for the whole list, as in an STE procedure: what the steps do and what the user must have before they start. No commands. Put the reason here once, not on each step.
+  - Write the intro and every action in Simplified Technical English (ASD-STE100): simple common words, one name for one thing, keep "the", "a" and "that". The intro and notices: 25 words or fewer a sentence. Never contractions, semicolons, should/may/might/could/would (use must/can/will), present perfect, "-ing" verbs, passive voice, phrasal verbs ("set up": install or configure), check/verify/confirm/ensure (write "make sure that"), e.g./i.e./etc., or simply/just/easily. Commands, paths, on-screen labels, names and numbers stay exactly as they are.
+- One call per turn with a short \`title\` (the task), all decisions and actions together.
+- The box never updates itself: call the tool again in any turn where what you need changes, even while it still holds older asks. Give only what is new or changed: steps the user has not finished stay in the box by themselves, under "Earlier", until they tick or clear them.
+- When the user answers a waiting question by typing instead of clicking, you're told which are still open: put their numbers in \`answered\` with that \`title\`, in the same call as any new decisions and actions.
+- With each message you're told the open actions by number. When the conversation shows one is finished (the user said so, they ran it, or your own tool result shows its outcome), put its number in \`done\` with that \`title\`, so the box stays current without the user ticking it. Commands that ran exactly as written tick themselves.
+- Then keep your final answer short: say what you did and that what you need is in the box. Don't repeat the options or the steps.
+- Steps or commands for the user go in the box, never only in your reply.
+- A question asked with AskUserQuestion mid-task does not need to go in the box too.
+- Skip it only when you need nothing from the user.`
+
+export const REMINDER = `[Action Items] Anything you need from the user (decisions or actions) goes in the box via ${TOOL_ID} (ToolSearch "select:${TOOL_ID}" if not loaded).`
+
+/** A prompt's context: the reminder only while no system prompt carries the instructions (a session the mod joined mid-way). */
+export const withReminder = (context: readonly string[], isComposed: boolean) => (isComposed ? [...context] : [...context, REMINDER])
+
+const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+
+// Simplified Technical English (ASD-STE100), the rules a machine can check without a model call.
+const STE_BANNED: [RegExp, string][] = [
+  [/;/, 'a semicolon (write two sentences)'],
+  [/\b\w+n['’]t\b|['’](re|ll|ve|d|m)\b|\b(it|that|there|here|what|let)['’]s\b/i, 'a contraction'],
+  [/\b(should|might|could|would)\b|\bmay\b/, '"should", "may", "might", "could" or "would" (use must, can or will)'],
+  [/\b(has|have|had) been\b/i, 'the present perfect'],
+  [/\b(verify|verifies|confirm|confirms|ensure|ensures)\b|^check\b|[,.:] check\b/i, 'check/verify/confirm/ensure (write "make sure that")'],
+  [/\be\.g\.|\bi\.e\.|\betc\b/i, 'e.g., i.e. or etc.'],
+  [/\b(simply|just|easily|quickly)\b/i, 'simply, just, easily or quickly (delete it)'],
+  [/\bset up\b/i, '"set up" (write install or configure)'],
+]
+
+/** Words for STE's limit: code, a quote, a bracketed aside or a hyphenated word counts as one. */
+export const steWords = (t: string) =>
+  t.replace(/`[^`]*`/g, 'X').replace(/"[^"]*"/g, 'X').replace(/\([^)]*\)/g, 'X').split(/\s+/).filter(Boolean).length
+
+/** What breaks STE in one field, or nothing. Commands are never checked: they stay exactly as they are. */
+export const steProblems = (t: string, limit: number) => {
+  // Code and quoted labels stay exactly as they are, so the word rules skip them.
+  const plain = t.replace(/`[^`]*`/g, 'X').replace(/"[^"]*"/g, 'X')
+  const found = STE_BANNED.filter(([re]) => re.test(plain)).map(([, what]) => what)
+  // Per sentence: one step is one sentence of `limit` words or fewer.
+  if (t.split(/(?<=[.!?])\s+/).some(sentence => steWords(sentence) > limit)) found.unshift(`a sentence over ${limit} words`)
+  return found
+}
+
+export const parseSet = (input: Record<string, unknown>, id: string, at: number): StepSet | string => {
+  const title = str(input.title)
+  if (!title) return '`title` must be a non-empty string.'
+  const items: Item[] = []
+  for (const raw of Array.isArray(input.decisions) ? input.decisions : []) {
+    const d = raw as { question?: unknown; options?: unknown }
+    const text = str(d?.question)
+    if (!text) return 'Each decision needs a `question`.'
+    const options = Array.isArray(d.options) ? d.options.map(str).filter(Boolean).slice(0, 6) : []
+    const detail = str((d as { detail?: unknown }).detail)
+    items.push({ kind: 'decide', text, ...(detail ? { detail } : {}), options })
+  }
+  // `steps` is the older name for actions.
+  const actions = Array.isArray(input.actions) ? input.actions : Array.isArray(input.steps) ? input.steps : []
+  for (const raw of actions) {
+    const s = raw as { text?: unknown; check?: unknown; command?: unknown; caution?: unknown; warning?: unknown }
+    const text = str(s?.text)
+    if (!text) return 'Each action needs a `text`.'
+    const check = str(s.check)
+    const command = str(s.command)
+    const caution = str(s.caution)
+    const warning = str(s.warning)
+    // New actions are held to STE; one message lists every problem, so one retry fixes them all.
+    if (Array.isArray(input.actions)) {
+      const fields: [string, string, number][] = [['text', text, 20], ['check', check, 20], ['caution', caution, 25], ['warning', warning, 25]]
+      const problems = fields.flatMap(([name, value, limit]) => (value ? steProblems(value, limit).map(p => `\`${name}\` has ${p}`) : []))
+      if (check && !/^make sure that\b/i.test(check)) problems.push('`check` must start with "Make sure that"')
+      if (problems.length > 0) return `Action "${text}" is not in Simplified Technical English: ${problems.join('; ')}. Rewrite it and call again.`
+    }
+    items.push({
+      kind: 'do',
+      text,
+      ...(check ? { check } : {}),
+      ...(command ? { command } : {}),
+      ...(warning ? { warning } : {}),
+      ...(caution ? { caution } : {}),
+      isDone: false,
+    })
+  }
+  if (items.length === 0) return 'Give at least one entry in `decisions` or `actions`.'
+  const intro = str(input.intro)
+  if (intro) {
+    const problems = steProblems(intro, 25)
+    if (intro.split(/(?<=[.!?])\s+/).length > 3) problems.push('more than 3 sentences')
+    if (problems.length > 0) return `\`intro\` is not in Simplified Technical English: ${problems.join('; ')}. Rewrite it and call again.`
+  }
+  return { id, title, ...(intro ? { intro } : {}), items, at }
+}
+
+export const decisions = (set: StepSet) => set.items.filter((i): i is Decision => i.kind === 'decide')
+export const actions = (set: StepSet) => set.items.filter((i): i is Action => i.kind === 'do')
+
+/** A decision still waiting on the person: not picked, and its set's answers not yet sent. */
+const isPending = (set: StepSet, d: Decision) => !set.isSent && (d.answer === undefined || d.isTyping === true)
+export const pendingDecisions = (set: StepSet) => decisions(set).filter(d => isPending(set, d))
+export const openActions = (set: StepSet) => actions(set).filter(a => !a.isDone)
+export const isOpen = (set: StepSet) => pendingDecisions(set).length > 0 || openActions(set).length > 0
+/** Every decision has a clicked or typed answer and nothing has been sent yet. */
+export const isDecided = (set: StepSet) =>
+  !set.isSent && decisions(set).length > 0 && decisions(set).every(d => d.answer !== undefined || d.isTyping === true)
+
+/**
+ * An update to a set already in the box: the new asks replace the old, but an action the person
+ * ticked or a question they answered stays that way when the same text comes back.
+ */
+export const mergeSet = (old: StepSet, set: StepSet): StepSet => {
+  const items = set.items.map(it => {
+    const was = old.items.find(o => o.kind === it.kind && o.text === it.text)
+    if (!was) return it
+    if (it.kind === 'do' && was.kind === 'do') return { ...it, isDone: was.isDone }
+    if (it.kind === 'decide' && was.kind === 'decide' && was.answer !== undefined && !was.isTyping)
+      return { ...it, answer: was.answer, ...(was.isDelivered ? { isDelivered: true } : {}) }
+    return it
+  })
+  return closeIfDecided({ ...set, items })
+}
+
+/** What the person has not finished: an open action, or a question still waiting on them. */
+const isUnfinished = (set: StepSet, it: Item) => (it.kind === 'do' ? !it.isDone : isPending(set, it))
+
+/**
+ * The box holds one list. New asks go on top; what the person has not finished from before is carried
+ * under "Earlier" until they tick or clear it; what they finished drops off. Nothing stacks.
+ */
+export const addSet = (list: readonly StepSet[], set: StepSet): StepSet[] => {
+  const old = list[0]
+  if (!old) return [set]
+  const merged = mergeSet(old, set)
+  const earlier = old.items
+    .filter(o => isUnfinished(old, o) && !set.items.some(it => it.kind === o.kind && it.text === o.text))
+    .map(o => ({ ...o, isEarlier: true }))
+  // Decisions before actions, each with the new asks first.
+  const items = [...merged.items, ...earlier].sort((x, y) => (x.kind === y.kind ? 0 : x.kind === 'decide' ? -1 : 1))
+  return [{ ...merged, items, isSent: merged.isSent && !earlier.some(it => it.kind === 'decide') }]
+}
+
+/** A box saved by 6.7 or earlier, with sets stacked: folded into one list, oldest first. */
+export const flatten = (list: readonly StepSet[]) => [...list].reverse().reduce<StepSet[]>((acc, s) => addSet(acc, s), []).slice(0, 1)
+
+/** Drops one ask the person no longer needs. */
+export const dropItem = (list: readonly StepSet[], id: string, index: number) =>
+  list.map(s => (s.id !== id ? s : { ...s, items: s.items.filter((_, i) => i !== index) })).filter(s => s.items.length > 0)
+
+const editItem = (list: readonly StepSet[], id: string, index: number, fn: (item: Item) => Item) =>
+  list.map(s => (s.id !== id ? s : { ...s, items: s.items.map((it, i) => (i === index ? fn(it) : it)) }))
+
+export const toggleAction = (list: readonly StepSet[], id: string, index: number) =>
+  editItem(list, id, index, it => (it.kind === 'do' ? { ...it, isDone: !it.isDone } : it))
+
+export const pick = (list: readonly StepSet[], id: string, index: number, answer: string) =>
+  editItem(list, id, index, it => (it.kind === 'decide' ? { ...it, answer, isTyping: false } : it))
+
+export const startTyping = (list: readonly StepSet[], id: string, index: number) =>
+  editItem(list, id, index, it => (it.kind === 'decide' ? { ...it, answer: undefined, isTyping: true } : it))
+
+export const markSent = (list: readonly StepSet[], id: string) => list.map(s => (s.id === id ? { ...s, isSent: true } : s))
+
+/** Drops a set the person no longer cares about, done or not, so the box never falls back to it. */
+export const clearSet = (list: readonly StepSet[], id: string) => list.filter(s => s.id !== id)
+
+// A merged set whose questions were all answered and sent before stays sent.
+function closeIfDecided(set: StepSet): StepSet {
+  const ds = decisions(set)
+  return ds.length > 0 && ds.every(d => d.answer !== undefined && d.isDelivered) ? { ...set, isSent: true } : set
+}
+
+/** Marks the set sent once no decision waits any more. */
+const closeIfDone = (set: StepSet): StepSet =>
+  decisions(set).every(d => d.answer !== undefined && !d.isTyping) ? { ...set, isSent: true } : set
+
+/**
+ * A typed reply, read for the questions the person was typing an answer to ("- Q → answer"):
+ * a written answer counts; a blank or missing one puts the question back to waiting.
+ */
+export const applyTyped = (set: StepSet, text: string): StepSet => {
+  const lines = text.split('\n')
+  const items = set.items.map(it => {
+    if (it.kind !== 'decide' || !it.isTyping) return it
+    const line = lines.find(l => l.replace(/^\s*-\s*/, '').startsWith(`${it.text} →`))
+    const answer = line ? line.slice(line.indexOf('→') + 1).trim() : ''
+    return answer ? { ...it, answer, isTyping: false, isDelivered: true } : { ...it, answer: undefined, isTyping: false }
+  })
+  return closeIfDone({ ...set, items })
+}
+
+/** Decisions Claude saw answered in chat, by their number in the box (1 = the first question). */
+export const markAnswered = (set: StepSet, numbers: readonly number[]): StepSet => {
+  let n = 0
+  const items = set.items.map(it => {
+    if (it.kind !== 'decide') return it
+    n += 1
+    return numbers.includes(n) && it.answer === undefined ? { ...it, answer: '(answered in chat)', isTyping: false } : it
+  })
+  return closeIfDone({ ...set, items })
+}
+
+/** What Claude reads beside a typed reply while questions wait: the open ones, numbered as in the box. */
+export const openNote = (set: StepSet) => {
+  const open = decisions(set)
+    .map((d, i) => ({ d, n: i + 1 }))
+    .filter(x => isPending(set, x.d))
+    .map(x => `${x.n}. ${x.d.text}`)
+  return `The Action Items box ("${set.title}") still has open questions:\n${open.join('\n')}\nIf this message answers any of them, call ${TOOL_ID} with \`title\` "${set.title}" and \`answered\` listing their numbers, so the box clears them (add any new decisions or actions to the same call). Leave the rest open; don't ask them again in your reply.`
+}
+
+/** The open actions, numbered as the Do tab numbers them (ticked ones keep their number). */
+export const openActionLines = (set: StepSet) =>
+  actions(set)
+    .map((a, i) => ({ a, n: i + 1 }))
+    .filter(x => !x.a.isDone)
+    .map(x => `${x.n}. ${x.a.text.length > 90 ? `${x.a.text.slice(0, 89)}…` : x.a.text}`)
+
+/**
+ * What Claude reads with each prompt while the box holds open asks, so it updates them instead of leaving them
+ * stale. The open actions are listed, so Claude can tick the ones the conversation shows are finished.
+ */
+export const boxNote = (list: readonly StepSet[]) => {
+  const open = list.filter(isOpen)
+  if (open.length === 0) return undefined
+  const todo = open.flatMap(s => {
+    const lines = openActionLines(s)
+    return lines.length > 0 ? [`Open actions in "${s.title}": ${lines.join(' · ')}.`] : []
+  })
+  const tick = todo.length > 0 ? ` ${todo.join(' ')} When the conversation shows one is finished (the user said so, ran it, or a tool result shows its outcome), tick it: call ${TOOL_ID} with that \`title\` and \`done\` listing its number.` : ''
+  return `[Action Items] The box holds: ${open.map(s => `"${s.title}" (${countText(s)})`).join(', ')}.${tick} If this turn changes what you need from the user, call ${TOOL_ID} again with what is new: unfinished asks stay by themselves.`
+}
+
+/** Actions Claude saw finished, by their number in the Do tab (1 = the first action). */
+export const tickDone = (set: StepSet, numbers: readonly number[]): StepSet => {
+  let n = 0
+  const items = set.items.map(it => {
+    if (it.kind !== 'do') return it
+    n += 1
+    return numbers.includes(n) && !it.isDone ? { ...it, isDone: true } : it
+  })
+  return { ...set, items }
+}
+
+const squash = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase()
+
+/** The lines of a command that run: past blank lines and comments. */
+const runLines = (command: string) =>
+  command.split('\n').map(squash).filter(l => l && !l.startsWith('#') && !l.startsWith('//') && !/^rem\b/.test(l))
+
+/** The slash commands an action names, in its command or its text: "/reload-plugins". */
+const slashWords = (a: Action) => [...`${a.command ?? ''} ${a.text}`.matchAll(/(?:^|[\s`"(])(\/[a-z][\w:-]*)/gi)].map(m => m[1]!.toLowerCase())
+
+/**
+ * Whether running `ran` finishes the action: a slash command the action names, or every line of its command
+ * found in what ran (Claude's shell call can wrap it: `cmd 2>&1; claude plugin list`). Short commands must match whole.
+ */
+export const ranAction = (a: Action, ran: string) => {
+  const r = squash(ran)
+  if (!r) return false
+  if (r.startsWith('/')) return slashWords(a).includes(r.split(' ')[0]!)
+  const lines = runLines(a.command ?? '')
+  if (lines.length === 0) return false
+  return lines.every(l => (l.length >= 10 ? r.includes(l) : r === l))
+}
+
+/** Ticks every open action that `ran` finishes; `ticked` names them, for the toast. */
+export const tickRan = (list: readonly StepSet[], ran: string) => {
+  const ticked: string[] = []
+  const next = list.map(s => ({
+    ...s,
+    items: s.items.map(it => {
+      if (it.kind !== 'do' || it.isDone || !ranAction(it, ran)) return it
+      ticked.push(it.text)
+      return { ...it, isDone: true }
+    }),
+  }))
+  return { list: next, ticked }
+}
+
+// A question to the user, or a step they must take, at the end of a reply.
+const ASKS = /\b(want me to|should i|shall i|do you want|would you like|let me know|which (one|do you)|you (need|must|have) to (run|restart|reload|sign|open|install|approve)|run this)\b/i
+
+/**
+ * What a final reply asks of the user, when it does: the last question it ends on, or the step it hands them.
+ * Code, quotes and a pointer to the box itself are left out.
+ */
+export const replyAsk = (reply: string) => {
+  const prose = reply.replace(/```[\s\S]*?```/g, ' ').replace(/^>.*$/gm, ' ')
+  if (/action items box|in the box\b/i.test(prose)) return undefined
+  const paras = prose.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+  const tail = paras.slice(-2).join(' ')
+  const sentences = tail.split(/(?<=[.!?:])\s+/)
+  const question = [...sentences].reverse().find(s => /\?["')*_`]*$/.test(s.trim()))
+  const asked = question ?? [...sentences].reverse().find(s => ASKS.test(s))
+  if (!asked) return undefined
+  const line = asked.replace(/\s+/g, ' ').trim()
+  return line.length > 140 ? `${line.slice(0, 139)}…` : line
+}
+
+/** What sends Claude back once when it ended a turn asking something without the box. */
+export const nudgeText = (ask: string) =>
+  `[Action Items] Your reply asks the user something ("${ask}") but the Action Items box was not used this turn. Call ${TOOL_ID} now with that question (or the step they must take). Do not repeat your answer: after the call, say only that it is in the box. If the user needs to do nothing, end the turn without a call.`
+
+/** The clicked answers as the person's reply; a typed one is left for them to finish. */
+export const answerText = (set: StepSet) =>
+  [`${set.title}:`, ...decisions(set).filter(d => !d.isTyping && d.answer !== undefined).map(d => `- ${d.text} → ${d.answer}`)].join('\n')
+
+export const countText = (set: StepSet) => {
+  const decide = pendingDecisions(set).length
+  const doing = openActions(set).length
+  const parts = [decide > 0 ? `${decide} to decide` : '', doing > 0 ? `${doing} to do` : ''].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : 'All done'
+}
+
+/**
+ * How far the Do tab shrinks to fit, least first: 0 draws it whole; 1 drops the blank lines and folds
+ * ticked actions into one line; 3, the last resort, keeps the check and the command on the next open
+ * action only, the rest one row each.
+ */
+export type DoLevel = 0 | 1 | 3
+const DO_CHROME = 5 // border, header, tabs and the gap under them
+
+/** Rows the Do tab takes at `level`, text wrapped at `columns`, under an intro of `intro`. */
+export const doRows = (list: readonly Action[], columns: number, level: DoLevel, intro = '') => {
+  const width = Math.max(20, columns - 8)
+  const lines = (t: string) => Math.max(1, Math.ceil(t.length / width))
+  const open = list.filter(a => !a.isDone)
+  const shown = level === 0 ? list : open
+  const next = open[0]
+  let rows = DO_CHROME + (intro ? lines(intro) + 1 : 0) + (level > 0 && open.length < list.length ? 1 : 0) + (open.some(a => a.isEarlier) ? 1 : 0)
+  shown.forEach((a, i) => {
+    rows += (level === 0 && i > 0 ? 1 : 0) + lines(a.text)
+    if (a.isDone) return
+    if (a.warning) rows += lines(`WARNING: ${a.warning}`)
+    if (a.caution) rows += lines(`CAUTION: ${a.caution}`)
+    const isWhole = level < 3 || a === next
+    if (a.check && isWhole) rows += lines(a.check)
+    if (a.command && isWhole) rows += lines(a.command)
+  })
+  return rows
+}
+
+/** The least shrinking that fits `maxRows`; the last level when none does. */
+export const doLevel = (list: readonly Action[], columns: number, maxRows: number, intro = ''): DoLevel =>
+  ([0, 1] as const).find(l => doRows(list, columns, l, intro) <= maxRows) ?? 3
+
+// Conversations whose box is kept; the oldest is dropped past this.
+const KEEP_SESSIONS = 20
+
+/** Where a conversation's box is kept: one key per session id, so another conversation never loads it. */
+export const storeKey = (sessionId: string) => `sets:${sessionId}`
+
+/** The stored conversations to drop, oldest first, so only the newest `KEEP_SESSIONS` stay. */
+export const staleKeys = (keys: readonly string[]) => {
+  const saved = keys.filter(k => k.startsWith('sets:'))
+  return [...keys.filter(k => k === 'sets'), ...saved.slice(0, Math.max(0, saved.length - KEEP_SESSIONS))]
+}
+
+// Every change goes to the session's state (redraws the box) and the store, under this conversation's
+// id, so a resumed conversation gets its box back and a new one starts empty.
+async function save($: EngineInterface, fn: (list: StepSet[]) => StepSet[]) {
+  const next = await update($, sets, list => fn(list))
+  try {
+    const key = storeKey(await $.session.id())
+    // Set last, so the store's order is oldest-used first.
+    await $.store.delete(key)
+    await $.store.set(key, next)
+    for (const k of staleKeys(await $.store.keys())) await $.store.delete(k)
+  } catch {}
+  return next
+}
+
+// Whether the main loop called the box this turn, and whether Claude was already sent back for it.
+let boxUsed = false
+let nudged = false
+
+/** Ticks the open actions that `ran` finishes, and says so in a toast. */
+async function autoTick($: EngineInterface, ran: string) {
+  const list = await read($, sets)
+  if (!list.some(s => openActions(s).length > 0)) return
+  const { list: next, ticked } = tickRan(list, ran)
+  if (ticked.length === 0) return
+  await save($, () => next)
+  $.ui.toast(ticked.length === 1 ? `Action Items: ticked "${ticked[0]}"` : `Action Items: ticked ${ticked.length} actions`)
+}
+
+async function show($: EngineInterface, set: StepSet) {
+  await save($, list => addSet(list, set))
+  await update($, band, () => set.id)
+  await update($, tab, () => null)
+}
+
+/** The box's one list, while something in it is still open. */
+export const nextSet = (list: readonly StepSet[]) => list.find(isOpen)
+export const shownSet = (list: readonly StepSet[], id: string | null) => (id === null ? undefined : nextSet(list))
+
+/** The line a folded action shows of its command: the first that runs, past blank lines and comments. */
+export const commandPreview = (command: string) =>
+  command.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#') && !l.startsWith('//') && !/^rem\b/i.test(l)) ?? command.split('\n')[0]!
+
+/**
+ * Everything in the box marked done: actions ticked, waiting questions closed without an answer going
+ * to Claude. The box closes; the next call from Claude starts fresh, since finished asks drop off.
+ */
+export const markAllDone = (list: readonly StepSet[]) =>
+  list.map(s => ({
+    ...s,
+    isSent: true,
+    items: s.items.map(it =>
+      it.kind === 'do' ? { ...it, isDone: true } : it.answer !== undefined && !it.isTyping ? it : { ...it, answer: '(marked done)', isTyping: false, isDelivered: true },
+    ),
+  }))
+
+async function markDone($: EngineInterface) {
+  await save($, markAllDone)
+  await update($, tab, () => null)
+}
+
+/** The tab the box opens on: Decide while a question waits, Do after. */
+export const autoTab = (set: StepSet): 'decide' | 'do' => (pendingDecisions(set).length > 0 || actions(set).length === 0 ? 'decide' : 'do')
+
+// Once every decision has an answer: clicked ones go straight back to Claude as the person's reply;
+// with one typed, the clicked ones join the draft in the prompt box for the person to finish and send.
+async function settle($: EngineInterface, id: string) {
+  const set = (await read($, sets)).find(s => s.id === id)
+  if (!set || !isDecided(set)) return
+  // Nothing left to click: let the box move on to Do.
+  await update($, tab, () => null)
+  if (!decisions(set).some(d => d.isTyping)) {
+    await save($, l => markSent(l, id))
+    await $.prompt.submit({ text: answerText(set), asUser: true })
+    return
+  }
+  // One is being typed: the set stays open until the reply is sent and read (applyTyped).
+  const box = await $.prompt.read()
+  await $.prompt.fill({ text: `${answerText(set)}\n${box.text}`, mode: 'replace' })
+  $.ui.toast('Finish your answer in the prompt box, then send it')
+}
+
+async function typeOwn($: EngineInterface, set: StepSet, index: number, question: string) {
+  await save($, l => startTyping(l, set.id, index))
+  const box = await $.prompt.read()
+  const line = `- ${question} → `
+  await $.prompt.fill({ text: box.text.trim() ? `\n${line}` : line, mode: box.text.trim() ? 'append' : 'replace' })
+  await settle($, set.id)
+}
+
+type Surface = Parameters<EngineInterface['ui']['resolve']>[0]
+
+function chip($: EngineInterface, e: Surface, key: string, label: string, onPress: (press: { surface: Surface['surface'] }) => unknown) {
+  const { Box, Button } = $.ui.resolve(e)
+  return (
+    <Box key={`${key}-box`} flexShrink={0} marginRight={1} backgroundColor={C.btn} paddingX={1} hover={{ backgroundColor: C.btnHover }}>
+      <Button key={key} plain label={label} hover={{ bold: true }} onPress={onPress} />
+    </Box>
+  )
+}
+
+// "▸ info" after a question: opens its context beneath, and closes it again.
+function infoButton($: EngineInterface, e: Surface, key: string, isOpen: boolean, onPress: () => unknown) {
+  const { Box, Button } = $.ui.resolve(e)
+  return (
+    <Box key={`${key}-box`} flexShrink={0} marginLeft={2}>
+      <Button key={key} plain dimColor={!isOpen} label={isOpen ? '▾ info' : '▸ info'} hover={{ bold: true }} onPress={onPress} />
+    </Box>
+  )
+}
+
+// "✕" on an ask carried over from before: drops it for good.
+function dropButton($: EngineInterface, e: Surface, key: string, onPress: () => unknown) {
+  const { Box, Button } = $.ui.resolve(e)
+  return (
+    <Box key={`${key}-box`} flexShrink={0} marginLeft={2}>
+      <Button key={key} plain dimColor label="✕" hover={{ bold: true }} onPress={onPress} />
+    </Box>
+  )
+}
+
+// The line between new asks and what is still unfinished from before.
+function earlierLine($: EngineInterface, e: Surface, key: string) {
+  const { Box, Text } = $.ui.resolve(e)
+  return (
+    <Box key={key}>
+      <Text dimColor>{'── Earlier ──'}</Text>
+    </Box>
+  )
+}
+
+// "1  Which region?" with its options as buttons beneath; once answered, the pick in green.
+// Its context line waits behind "▸ info".
+function decisionLine($: EngineInterface, e: Surface, set: StepSet, d: Decision, index: number, n: number, isSpaced: boolean, isFull: boolean, isInfo: boolean, onInfo: () => unknown, onDrop?: () => unknown) {
+  const { Box, Text } = $.ui.resolve(e)
+  const key = `${set.id}-${index}`
+  const pending = isPending(set, d)
+  return (
+    <Box key={`d-${key}`} flexDirection="column" marginTop={isSpaced && n > 1 ? 1 : 0}>
+      <Box flexDirection="row">
+        <Box width={4} flexShrink={0}>
+          <Text color={pending ? C.decide : C.done}>{pending && !d.isTyping ? `${n}` : '✓'}</Text>
+        </Box>
+        <Box flexShrink={1}>
+          <Text bold={pending && isFull} dimColor={!pending || !isFull}>{d.text}</Text>
+        </Box>
+        {isFull && pending && d.detail && infoButton($, e, `dinfo-${key}`, isInfo, onInfo)}
+        {onDrop && pending && dropButton($, e, `ddrop-${key}`, onDrop)}
+      </Box>
+      {isFull && pending && d.detail && isInfo && (
+        <Box marginLeft={4}>
+          <Text dimColor>{d.detail}</Text>
+        </Box>
+      )}
+      {isFull && pending && !d.isTyping && (
+        <Box flexDirection="row" flexWrap="wrap" marginLeft={4}>
+          {d.options.map((o, oi) =>
+            chip($, e, `pick-${key}-${oi}`, o, async () => {
+              await save($, l => pick(l, set.id, index, o))
+              await settle($, set.id)
+            }),
+          )}
+          {chip($, e, `own-${key}`, d.options.length > 0 ? 'Other…' : 'Answer…', () => typeOwn($, set, index, d.text))}
+        </Box>
+      )}
+      {d.isTyping && pending && (
+        <Box marginLeft={4}>
+          <Text dimColor>Typing your answer in the prompt box</Text>
+        </Box>
+      )}
+      {!pending && d.answer !== undefined && (
+        <Box marginLeft={4}>
+          <Text color={C.done}>{`→ ${d.answer}`}</Text>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+// "3  Sign in to Azure", the number ticking it off, then its "Make sure that" check and the command
+// with Copy, as an STE procedure step. The reason is said once, in the list's intro.
+type Show = { command: boolean }
+
+function actionLine($: EngineInterface, e: Surface, set: StepSet, a: Action, index: number, n: number, isSpaced: boolean, show: Show, onOpen?: () => unknown, onClose?: () => unknown, onDrop?: () => unknown) {
+  const { Box, Text, Button } = $.ui.resolve(e)
+  const key = `${set.id}-${index}`
+  return (
+    <Box key={`a-${key}`} flexDirection="column" marginTop={isSpaced ? 1 : 0}>
+      {/* STE puts a safety notice before its step, and it never hides behind info. */}
+      {!a.isDone && a.warning && (
+        <Box key={`warn-${key}`} marginLeft={4}>
+          <Text>
+            <Text bold color={C.warning}>{'WARNING: '}</Text>
+            <Text>{a.warning}</Text>
+          </Text>
+        </Box>
+      )}
+      {!a.isDone && a.caution && (
+        <Box key={`caution-${key}`} marginLeft={4}>
+          <Text>
+            <Text bold color={C.title}>{'CAUTION: '}</Text>
+            <Text>{a.caution}</Text>
+          </Text>
+        </Box>
+      )}
+      <Box flexDirection="row">
+        <Box width={4} flexShrink={0}>
+          <Button
+            key={`tick-${key}`}
+            plain
+            label={a.isDone ? '✓ ' : `${n} `}
+            hover={{ bold: true }}
+            onPress={() => save($, l => toggleAction(l, set.id, index))}
+          />
+        </Box>
+        {/* The text takes only its own width, so info (and a folded row's Copy) sits right after it, not out at the box's edge. */}
+        <Box flexShrink={1}>
+          {/* Not shown in full: its title opens it, folding the one open before. */}
+          {onClose && !a.isDone ? (
+            <Button key={`close-${key}`} plain label={`▾ ${a.text}`} hover={{ bold: true, underline: true }} onPress={onClose} />
+          ) : onOpen && !a.isDone ? (
+            <Box flexShrink={0}>
+              <Button key={`open-${key}`} plain label={`▸ ${a.text}`} hover={{ bold: true, underline: true }} onPress={onOpen} />
+            </Box>
+          ) : (
+            <Text bold={!a.isDone} dimColor={a.isDone} strikethrough={a.isDone} color={a.isDone ? C.done : undefined}>
+              {a.text}
+            </Text>
+          )}
+        </Box>
+        {onDrop && dropButton($, e, `drop-${key}`, onDrop)}
+        {/* Folded, its command rides on the same row, cut to fit, with Copy after it. */}
+        {!show.command && a.command && !a.isDone && (
+          <Box flexShrink={1} marginLeft={2} backgroundColor={C.code} paddingX={1}>
+            <Text color={C.do} wrap="truncate-end">{commandPreview(a.command)}</Text>
+          </Box>
+        )}
+        {!show.command && a.command && !a.isDone && (
+          <Box flexShrink={0} marginLeft={1}>
+            {chip($, e, `copy-${key}`, 'Copy', async press => {
+              const copied = await $.ui.copy({ text: a.command!, surface: press.surface })
+              $.ui.toast(copied.isCopied ? 'Command copied' : 'Could not copy the command')
+            })}
+          </Box>
+        )}
+      </Box>
+      {/* STE puts the expected result under its step: "Make sure that ...". */}
+      {show.command && a.check && !a.isDone && (
+        <Box key={`check-${key}`} marginLeft={4}>
+          <Text dimColor>{a.check}</Text>
+        </Box>
+      )}
+      {show.command && a.command && !a.isDone && (
+        <Box flexDirection="row" marginLeft={4}>
+          <Box flexShrink={1} backgroundColor={C.code} paddingX={1}>
+            <Text color={C.do}>{a.command}</Text>
+          </Box>
+          <Box flexShrink={0} marginLeft={1}>
+            {chip($, e, `copy-${key}`, 'Copy', async press => {
+              const copied = await $.ui.copy({ text: a.command!, surface: press.surface })
+              $.ui.toast(copied.isCopied ? 'Command copied' : 'Could not copy the command')
+            })}
+          </Box>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+export const register: Register = on => {
+  on('session.start', async ($, e, next) => {
+    await $.tool.register({
+      name: TOOL,
+      description:
+        "Put everything you need from the user in their Action Items box above the prompt: decisions they make (questions, choices, go-aheads) and actions they do themselves (run a script, sign in, check a setting). Call once before your final answer whenever you need something from them, and again whenever that changes, with only what is new: unfinished asks stay in the box by themselves.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'The task this is about, a few words.' },
+          intro: { type: 'string', description: 'STE intro for the actions: 1 to 3 short sentences on what they do and what the user needs first. The reason goes here once, not on each step.' },
+          decisions: {
+            type: 'array',
+            description: 'Questions the user answers.',
+            items: {
+              type: 'object',
+              properties: {
+                question: { type: 'string', description: 'The question, one short line.' },
+                detail: { type: 'string', description: 'Optional context: what the options mean, what you recommend.' },
+                options: { type: 'array', items: { type: 'string' }, description: '2-4 short choices to click, if the answer is one of a few.' },
+              },
+              required: ['question'],
+            },
+          },
+          answered: {
+            type: 'array',
+            items: { type: 'number' },
+            description: "Questions the user answered by typing: their numbers in the box, with that set's title. Can go with new decisions and actions in the same call.",
+          },
+          done: {
+            type: 'array',
+            items: { type: 'number' },
+            description: "Open actions the conversation shows are finished: their numbers in the box, with that set's title. Can go with new decisions and actions in the same call.",
+          },
+          actions: {
+            type: 'array',
+            description: 'Things the user does themselves.',
+            items: {
+              type: 'object',
+              properties: {
+                text: { type: 'string', description: 'One step as a command, in Simplified Technical English, 20 words or fewer.' },
+                check: { type: 'string', description: 'Only when the result matters: one sentence that starts with "Make sure that".' },
+                command: { type: 'string', description: 'The exact command to run for this action, if any.' },
+                caution: { type: 'string', description: 'STE CAUTION, shown before the step: a risk to data, a service or access. Command or condition first, then the risk.' },
+                warning: { type: 'string', description: 'STE WARNING, shown before the step: a risk to people. Command or condition first, then the risk.' },
+              },
+              required: ['text'],
+            },
+          },
+        },
+        required: ['title'],
+      },
+    })
+    // Immediate, so `done` and `hide` work while Claude is still working, when the box's buttons wait for the turn to end.
+    await $.command.register({ name: COMMAND, description: 'Show what Claude still needs from you', argumentHint: '[done | hide]', immediate: true })
+    // Bring back this conversation's box when it is resumed; sets from before decisions existed are dropped.
+    if ((await read($, sets)).length === 0) {
+      const stored = (await $.store.get(storeKey(await $.session.id()))) as StepSet[] | undefined
+      const usable = Array.isArray(stored) ? stored.filter(s => Array.isArray(s?.items)) : []
+      if (usable.length > 0) await update($, sets, () => flatten(usable))
+    }
+    return next(e)
+  })
+
+  // A /clear starts a new conversation in the same process: its box starts empty.
+  on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear') {
+      await update($, sets, () => [])
+      await update($, band, () => null)
+      await update($, tab, () => null)
+    }
+    return next(e)
+  })
+
+  on('prompt.compose', async ($, e, next) => {
+    const out = await next(e)
+    await update($, composed, () => true)
+    return {
+      sections: [...out.sections, { id: `${PLUGIN}:instructions`, text: INSTRUCTIONS, scope: 'session' as const }],
+    }
+  })
+
+  // A typed reply answers what is still open: the box stops waiting on it, and clicked answers
+  // not yet sent go along with it.
+  on('prompt.submit', async ($, e, next) => {
+    if (e.text.trim().startsWith('/')) return next(e)
+    await update($, expanded, () => false)
+    // A command pasted as the prompt ran by the person's hand, or is about to: it ticks its action.
+    if (e.origin.kind === 'composer' && e.text.length <= 300) await autoTick($, e.text).catch(() => {})
+    const context = withReminder(e.context ?? [], await read($, composed))
+    // A typed reply settles only what it answers: answers typed after "Other…" are read from it,
+    // clicked ones go along, and Claude is told which questions still wait, to clear those it answered.
+    if (e.origin.kind === 'composer') {
+      const waiting = (await read($, sets)).filter(s => pendingDecisions(s).length > 0)
+      if (waiting.length > 0) {
+        const after = waiting.map(s => applyTyped(s, e.text))
+        await save($, l => l.map(s => after.find(a => a.id === s.id) ?? s))
+        // Clicked answers Claude has not had yet go along once.
+        const fresh = after
+          .map(s => ({ s, ds: decisions(s).filter(d => d.answer !== undefined && !d.isTyping && !d.isDelivered) }))
+          .filter(x => x.ds.length > 0)
+        if (fresh.length > 0)
+          context.push(`Answers the user clicked in the Action Items box:\n${fresh.map(x => [`${x.s.title}:`, ...x.ds.map(d => `- ${d.text} → ${d.answer}`)].join('\n')).join('\n')}`)
+        const delivered = after.map(s => ({ ...s, items: s.items.map(it => (it.kind === 'decide' && it.answer !== undefined && !it.isTyping ? { ...it, isDelivered: true } : it)) }))
+        await save($, l => l.map(s => delivered.find(a => a.id === s.id) ?? s))
+        for (const s of after.filter(s => pendingDecisions(s).length > 0)) context.push(openNote(s))
+      }
+    }
+    const note = boxNote(await read($, sets))
+    if (note) context.push(note)
+    return next({ ...e, context })
+  }).catch(($, e, next) => next(e))
+
+  // Each turn starts with the box unused; the safety net at the end of the turn reads it.
+  on('turn.start', async ($, e, next) => {
+    boxUsed = false
+    nudged = false
+    return next(e)
+  })
+
+  // The safety net: a turn that ends asking the user something, with the box unused, goes back once to put it there.
+  on('classic.Stop', async ($, e, next) => {
+    const out = await next(e)
+    if (out.block || e.stop_hook_active || boxUsed || nudged) return out
+    const ask = replyAsk(e.last_assistant_message ?? '')
+    if (!ask) return out
+    nudged = true
+    return { ...out, block: nudgeText(ask) }
+  }).catch(($, e, next) => next(e))
+
+  // Any slash command the person runs (built-in ones too) ticks the action that names it.
+  on('command.run', async ($, e, next) => {
+    if (e.command !== COMMAND) await autoTick($, `/${e.command} ${e.args}`).catch(() => {})
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // A shell command Claude ran for the person, exactly as an action gives it, ticks that action once it succeeds.
+  on('tool.call', async ($, e, next) => {
+    if (e.tool === TOOL_ID) return next(e)
+    const ran = await next(e)
+    const command = (e as unknown as { command?: unknown }).command
+    if ((e.tool === 'Bash' || e.tool === 'PowerShell') && typeof command === 'string' && ran.deny === undefined && ran.isError !== true)
+      await autoTick($, command).catch(() => {})
+    return ran
+  })
+
+  on('tool.call', { tool: TOOL_ID }, async ($, e) => {
+    const input = e as unknown as Record<string, unknown>
+    if (e.agentId === undefined) boxUsed = true
+    const hasAsks = Array.isArray(input.decisions) || Array.isArray(input.actions) || Array.isArray(input.steps)
+    // Questions answered in chat and actions seen finished, cleared first so an update in the same call keeps them.
+    if (Array.isArray(input.answered) || Array.isArray(input.done)) {
+      const numbers = (v: unknown) => (Array.isArray(v) ? v.filter((n): n is number => typeof n === 'number') : [])
+      const title = str(input.title)
+      const list = await read($, sets)
+      const target = list.find(s => s.title === title) ?? list[0]
+      if (!target && !hasAsks) return { result: 'Not saved: no set with that title in the box.', isError: true }
+      if (target) {
+        const next = tickDone(markAnswered(target, numbers(input.answered)), numbers(input.done))
+        await save($, l => l.map(s => (s.id === target.id ? next : s)))
+        if (!hasAsks) return { result: `Cleared from the box. Left in it: ${countText(next)}.` }
+      }
+    }
+    const now = await $.clock.now()
+    const parsed = parseSet(input, String(now), now)
+    if (typeof parsed === 'string') return { result: `Not saved: ${parsed}`, isError: true }
+    await show($, parsed)
+    const shown = (await read($, sets))[0] ?? parsed
+    const clicks = decisions(parsed).some(d => d.options.length > 0) ? ' Their clicked answers come back to you as their next message.' : ''
+    const carried = shown.items.filter(it => it.isEarlier).length
+    const earlier = carried > 0 ? ` ${carried} unfinished from before stay under "Earlier".` : ''
+    return { result: `Shown in the Action Items box above the prompt (${countText(shown)}). Tell the user it is there instead of repeating it.${clicks}${earlier}` }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const below = await next(e)
+    const id = await read($, band)
+    if (id === null || e.props.hasSurvey) return below
+    const list = await read($, sets)
+    const set = shownSet(list, id)
+    if (!set) return below
+    const { Box, Text, Button } = $.ui.resolve(e)
+    // While Claude works the checklist needs the room: the box folds to one line.
+    // Buttons wait for the turn to end, so /action-items (immediate) is what opens it.
+    if (e.props.isWorking && !(await read($, expanded))) {
+      return (
+        <Box flexDirection="column">
+          <Box key="action-items-folded" flexDirection="row" justifyContent="space-between" borderStyle="round" borderColor={C.frame} paddingX={1}>
+            <Text>
+              <Text bold color={C.title}>{'⚑ CLAUDE NEEDS YOU'}</Text>
+              <Text dimColor>{'  ·  '}</Text>
+              <Text>{`${set.title} · ${countText(set)}`}</Text>
+            </Text>
+            <Text dimColor>{'/action-items ▸'}</Text>
+          </Box>
+          {below}
+        </Box>
+      )
+    }
+    const decide = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Decision; i: number } => x.it.kind === 'decide')
+    const doing = set.items.map((it, i) => ({ it, i })).filter((x): x is { it: Action; i: number } => x.it.kind === 'do')
+    // One section at a time: the tab the person picked, else Decide while a question waits.
+    const picked = await read($, tab)
+    // A picked Decide tab with nothing left to decide gives way to Do.
+    const current = picked === 'do' && doing.length > 0 ? 'do' : picked === 'decide' && pendingDecisions(set).length > 0 ? 'decide' : autoTab(set)
+
+    const tabChip = (id: 'decide' | 'do', mark: string, label: string, color: string, count: number) => {
+      const isOn = current === id
+      const text = `${label.toUpperCase()}${count > 0 ? ` ${count}` : ' ✓'}`
+      return (
+        <Box key={`tab-${id}-box`} flexDirection="row" flexShrink={0} marginRight={1} paddingX={1} backgroundColor={isOn ? C.chip : undefined} hover={{ backgroundColor: C.frame }}>
+          <Text bold color={isOn ? color : undefined} dimColor={!isOn}>{`${mark} `}</Text>
+          <Button key={`tab-${id}`} plain dimColor={!isOn} label={text} hover={{ bold: true }} onPress={() => update($, tab, () => id)} />
+        </Box>
+      )
+    }
+
+    // Decide: answered ones fold into a line, the first waiting question opens with its options,
+    // the rest wait one line each.
+    const answered = decide.filter(x => !isPending(set, x.it))
+    const waiting = decide.filter(x => isPending(set, x.it))
+    const focus = waiting.find(x => !x.it.isTyping)?.i
+    const drop = (i: number) => () => save($, l => dropItem(l, set.id, i))
+    // The question waiting first shows its context by itself; "x:" marks one closed by hand.
+    const openInfo = await read($, info)
+    const infoKey = (i: number) => `d:${set.id}:${i}`
+    const isInfo = (i: number) => !openInfo.includes(`x:${infoKey(i)}`) && (openInfo.includes(infoKey(i)) || i === focus)
+    const toggleInfo = (i: number) => () => {
+      const k = infoKey(i)
+      const isShown = isInfo(i)
+      return update($, info, v => [...v.filter(x => x !== k && x !== `x:${k}`), isShown ? `x:${k}` : k])
+    }
+    const decidePart = (
+      <Box key="decide-part" flexDirection="column">
+        {answered.length > 0 && waiting.length > 0 && (
+          <Box key="answered-folded">
+            <Text color={C.done} dimColor>{`✓   ${answered.length} answered`}</Text>
+          </Box>
+        )}
+        {(waiting.length > 0 ? waiting : answered).flatMap((x, n, all) => [
+          ...(x.it.isEarlier && !all[n - 1]?.it.isEarlier ? [earlierLine($, e, 'earlier-decide')] : []),
+          decisionLine($, e, set, x.it, x.i, decide.indexOf(x) + 1, false, x.i === focus, isInfo(x.i), toggleInfo(x.i), x.it.isEarlier ? drop(x.i) : undefined),
+        ])}
+      </Box>
+    )
+
+    // Do: drawn whole when it fits; else ticked ones fold and only the next open action keeps
+    // its check and command.
+    // Three rows stay free for Bare View's finished checklist, folded to one line beside it.
+    const level = doLevel(doing.map(x => x.it), e.props.bodyColumns, e.props.maxRows - 3, set.intro)
+    const nextOpen = doing.find(x => !x.it.isDone)?.i
+    const isDoneShown = await read($, showDone)
+    const shown = level === 0 || isDoneShown ? doing : doing.filter(x => !x.it.isDone)
+    const doneCount = doing.filter(x => x.it.isDone).length
+    // The opened action shows in full: the one picked by its title, else the next open one;
+    // "<set>:none" when the person folded it.
+    const focusKey = await read($, openAction)
+    const opened =
+      focusKey === `${set.id}:none` ? undefined : (doing.find(x => `${set.id}:${x.i}` === focusKey && !x.it.isDone)?.i ?? nextOpen)
+    const showFor = (i: number): Show => ({ command: level < 3 || i === opened })
+    // Folded means its command is tucked away; with no command there is nothing to open.
+    const isWhole = (sh: Show, a: Action) => sh.command || (!a.command && !a.check)
+    const doPart = (
+      <Box key="do-part" flexDirection="column">
+        {/* An STE procedure opens with what it does and what you need, said once for every step. */}
+        {set.intro && (
+          <Box key="intro" marginBottom={1}>
+            <Text>{set.intro}</Text>
+          </Box>
+        )}
+        {/* Ticked ones fold into a line that lists them again, so one can be unticked. */}
+        {level > 0 && doneCount > 0 && (
+          <Box key="done-folded">
+            <Button
+              key="toggle-done"
+              plain
+              dimColor
+              label={isDoneShown ? `✓   ${doneCount} done  ▾ hide` : `✓   ${doneCount} done  ▸ show`}
+              hover={{ bold: true }}
+              onPress={() => update($, showDone, v => !v)}
+            />
+          </Box>
+        )}
+        {shown.flatMap((x, n) => {
+          const sh = showFor(x.i)
+          const divider = x.it.isEarlier && !x.it.isDone && !shown.slice(0, n).some(y => y.it.isEarlier && !y.it.isDone) ? [earlierLine($, e, 'earlier-do')] : []
+          const open = isWhole(sh, x.it) ? undefined : () => update($, openAction, () => `${set.id}:${x.i}`)
+          // In a short box the opened one folds back from its title too.
+          const close = level > 0 && x.i === opened && x.it.command ? () => update($, openAction, () => `${set.id}:none`) : undefined
+          return [...divider, actionLine($, e, set, x.it, x.i, doing.indexOf(x) + 1, level === 0 && n > 0 && divider.length === 0, sh, open, close, x.it.isEarlier ? drop(x.i) : undefined)]
+        })}
+      </Box>
+    )
+
+    return (
+      <Box flexDirection="column">
+        <Box key="action-items-band" flexDirection="column" borderStyle="round" borderColor={C.frame} paddingX={1}>
+          <Box key="band-header" flexDirection="row" justifyContent="space-between">
+            <Text>
+              <Text bold color={C.title}>{'⚑ CLAUDE NEEDS YOU'}</Text>
+              <Text dimColor>{'  ·  '}</Text>
+              <Text bold>{set.title}</Text>
+            </Text>
+            <Box key="band-buttons" flexDirection="row" flexShrink={0}>
+              {/* Clear drops this set for good, so the box moves on instead of coming back to it. */}
+              <Box key="done-all-box" marginRight={2}>
+                <Button key="done-all" plain dimColor label="Mark as done" hover={{ bold: true }} onPress={() => markDone($)} />
+              </Box>
+              <Button key="band-close" plain label="✕" hover={{ bold: true }} onPress={() => update($, band, () => null)} />
+            </Box>
+          </Box>
+          <Box key="tabs" flexDirection="row" marginBottom={1}>
+            {decide.length > 0 && tabChip('decide', '?', 'Decide', C.decide, waiting.length)}
+            {doing.length > 0 && tabChip('do', '▶', 'Do', C.do, doing.length - doing.filter(x => x.it.isDone).length)}
+          </Box>
+          {current === 'decide' ? decidePart : doPart}
+        </Box>
+        {below}
+      </Box>
+    )
+  })
+
+  on('command.run', { command: COMMAND }, async ($, e) => {
+    const arg = (e.args ?? '').trim().toLowerCase()
+    if (arg === 'hide') {
+      await update($, band, () => null)
+      return { text: 'Box hidden. /action-items brings it back.' }
+    }
+    // `clear` and `clear all` are the older names.
+    if (arg === 'done' || arg === 'clear' || arg === 'clear all') {
+      if (!nextSet(await read($, sets))) return { text: 'Nothing open: Claude needs nothing from you right now.' }
+      await markDone($)
+      return { text: 'Marked everything as done.' }
+    }
+    const open = nextSet(await read($, sets))
+    if (!open) return { text: 'Nothing open: Claude needs nothing from you right now.' }
+    await update($, band, () => open.id)
+    await update($, expanded, () => true)
+    return { text: `Showing ${open.title} (${countText(open)}) above the prompt.` }
+  })
+}
